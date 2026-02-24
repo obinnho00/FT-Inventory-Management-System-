@@ -64,15 +64,20 @@
     <div class="requirement-card">
 
         <div class="requirement-header">
-            <h2>System Under Development</h2>
-            <p>
-                This system is currently being developed by <strong>Obi</strong>.
-                Improvements and future features will appear incrementally as they are developed and tested.
-            </p>
-            <p>
-                If you have suggestions or system requirements, please submit them below.
-            </p>
-        </div>
+        <h2>Department-Specific Digital System Development</h2>
+        <p>
+            This platform is currently under active development by <strong>Obi</strong> to support 
+            department-level performance tracking, automation, and operational efficiency.
+        </p>
+        <p>
+            Departments are encouraged to submit requests for custom features, workflow enhancements, 
+            reporting dashboards, or software tools specific to their systems and machines.
+        </p>
+        <p>
+            All submitted requirements will be evaluated and implemented incrementally as part of 
+            the ongoing digital transformation initiative.
+        </p>
+    </div>
 
         <form method="POST" action="{% url 'handle_requirement' %}">
             {% csrf_token %}
