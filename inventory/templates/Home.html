@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+{% load static %}
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home - ABB Inventory System</title>
+    <link rel="stylesheet" href="{% static 'Css/Home.css' %}">
+</head>
+<body>
+    <header>
+        <h1>ABB</h1>
+        <nav>
+            <ul>
+                <li><a href="{% url 'home' %}">Home</a></li>
+                 <!--- <li><a href="{% url 'inventory_list' %}">Inventory</a></li> !--->
+                <li><a href="{% url 'add_item' %}">Add Item</a></li>
+                <input type="text" id="search" placeholder="Search inventory...">
+            </ul>
+        </nav>
+    </header>
+    <main>
+        <section class="welcome-section">
+            <h2>AIMS</h2>
+            <p>Use our system to keep track of your inventory, add new items, and generate reports.</p>
+            
+        </section>
+    </main>
+    <footer>
+        <p>&copy; 2024 ABB Inventory System. All rights reserved.</p>
+    </footer>
