@@ -20,6 +20,6 @@ from inventory import views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', views.home, name='home'),
-    path('handle/', views.handle_machine, name='handle_machine'),
+    path('', views.Home, name='home'),
+    path('submit-requirement/', views.Handle_requirement_submission, name='handle_requirement'),
 ]

@@ -4,28 +4,114 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Home - ABB Inventory System</title>
+    <title>{% block title %}ABB Inventory System{% endblock %}</title>
+
     <link rel="stylesheet" href="{% static 'Css/Home.css' %}">
 </head>
+
 <body>
-    <header>
-        <h1>ABB</h1>
-        <nav>
-            <ul>
-                <li><a href="{% url 'home' %}">Home</a></li>
-                 <!--- <li><a href="{% url 'inventory_list' %}">Inventory</a></li> !--->
-                <li><a href="{% url 'add_item' %}">Add Item</a></li>
-                <input type="text" id="search" placeholder="Search inventory...">
+
+<header class="main-header">
+
+    <div class="nav-top">
+
+        <!-- Logo -->
+        <div class="logo-container">
+            <a href="/">
+                <img src="{% static 'image/Abblogo.png' %}" 
+                     alt="ABB Logo" 
+                     class="logo-image">
+            </a>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="nav-container">
+            <ul class="nav-links">
+                <li><a href="#">Dashboard</a></li>
+                <li><a href="#">Inventory</a></li>
+                <li><a href="#">Departments</a></li>
+                <li><a href="#">Vendors</a></li>
+                <li><a href="#">Reports</a></li>
+                <li><a href="#">Configuration</a></li>
             </ul>
         </nav>
-    </header>
-    <main>
-        <section class="welcome-section">
-            <h2>AIMS</h2>
-            <p>Use our system to keep track of your inventory, add new items, and generate reports.</p>
-            
-        </section>
-    </main>
-    <footer>
-        <p>&copy; 2024 ABB Inventory System. All rights reserved.</p>
-    </footer>
+
+    </div>
+
+    <div class="nav-search">
+        <input type="text" 
+               placeholder="Search items by part number or vendor...">
+    </div>
+
+</header>
+
+<main>
+{% block content %}
+
+{% if messages %}
+    {% for message in messages %}
+        {% if message.tags == 'success' %}
+            <script>
+                window.addEventListener('DOMContentLoaded', function() {
+                    alert("{{ message|escapejs }}");
+                });
+            </script>
+        {% endif %}
+    {% endfor %}
+{% endif %}
+
+<div class="requirement-wrapper">
+    <div class="requirement-card">
+
+        <div class="requirement-header">
+            <h2>System Under Development</h2>
+            <p>
+                This system is currently being developed by <strong>Obi</strong>.
+                Improvements and future features will appear incrementally as they are developed and tested.
+            </p>
+            <p>
+                If you have suggestions or system requirements, please submit them below.
+            </p>
+        </div>
+
+        <form method="POST" action="{% url 'handle_requirement' %}">
+            {% csrf_token %}
+
+            <div class="form-group">
+                <label>Your Name</label>
+                <input type="text" name="name" required>
+            </div>
+
+            <div class="form-group">
+                <label>Department</label>
+                <select name="department" required>
+                    <option value="">Select Department</option>
+                    {% for department in departments %}
+                        <option value="{{ department.id }}">{{ department.name }}</option>
+                    {% endfor %}
+                    <option value="other">Other</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Requirement</label>
+                <textarea name="message" rows="5" required></textarea>
+            </div>
+
+            <button type="submit" class="submit-btn">
+                Submit Requirement
+            </button>
+        </form>
+
+    </div>
+</div>
+
+{% endblock %}
+</main>
+
+<footer>
+    <p>&copy; 2026 ABB Inventory System</p>
+</footer>
+
+</body>
+</html>

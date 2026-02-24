@@ -89,19 +89,15 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'abb_inventory_system.wsgi.application'
 
-
+import dj_database_url
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get("POSTGRES_DB"),
-        'USER': os.environ.get("POSTGRES_USER"),
-        'PASSWORD': os.environ.get("POSTGRES_PASSWORD"),
-        'HOST': os.environ.get("POSTGRES_HOST"),
-        'PORT': os.environ.get("POSTGRES_PORT", "5432"),
-    }
+    "default": dj_database_url.parse(
+        "postgresql://abb_inventory_production_database_user:B8ZklfhkJ8knl6Vi0KxXy4bzOciWfp7N@dpg-d6e9ia95pdvs73frc6rg-a.oregon-postgres.render.com/abb_inventory_production_database",
+        conn_max_age=600,
+        ssl_require=True,
+    )
 }
 
 

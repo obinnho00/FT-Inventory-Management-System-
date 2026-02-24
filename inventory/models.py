@@ -11,6 +11,19 @@ class Department(models.Model):
     def __str__(self):
         return self.name
 
+# this user requirment is for development purpose
+class User_Requirement(models.Model):
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.CASCADE,
+        related_name="user_requirements"
+    )
+    requirement_description = models.TextField(blank=True)
+    name_of_requester = models.CharField(max_length=100, blank=True)
+    date_reported = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"User Requirement reported {self.date_reported:%Y-%m-%d %H:%M}"
 
 class Machine(models.Model):
     department = models.ForeignKey(
