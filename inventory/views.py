@@ -92,4 +92,4 @@ def inventory_view(request):
         "selected_department": selected_department
     }
 
-    return render(request, "Dashboard.html", context)
+    return render(request, "dashboard.html", context)
