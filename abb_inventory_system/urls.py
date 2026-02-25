@@ -18,9 +18,18 @@ from django.contrib import admin
 from django.urls import path
 from inventory import views
 
+
+from django.contrib import admin
+from django.urls import path
+from inventory import views
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+
     path('', views.Home, name='home'),
+
     path('submit-requirement/', views.Handle_requirement_submission, name='handle_requirement'),
-    path('search-machine-part/', views.Handle_machine_part_search_values_part, name='search_machine_part'),
+
+    # MAIN INVENTORY PAGE (handles search + department filter)
+    path('inventory/', views.inventory_view, name='inventory'),
 ]

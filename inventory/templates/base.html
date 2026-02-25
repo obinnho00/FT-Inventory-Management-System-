@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+{% load static %}
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>{% block title %}ABB Inventory System{% endblock %}</title>
+
+    <link rel="stylesheet" href="{% static 'Css/Home.css' %}">
+
+    {% block extra_css %}{% endblock %}
+</head>
+
+<body>
+
+<!-- ================= HEADER ================= -->
+<header class="main-header">
+
+    <div class="nav-top">
+
+        <!-- Logo -->
+        <div class="logo-container">
+            <a href="/">
+                <img src="{% static 'image/Abblogo.png' %}" 
+                     alt="ABB Logo" 
+                     class="logo-image">
+            </a>
+        </div>
+
+        <!-- Hamburger Toggle -->
+        <div class="menu-toggle" id="menu-toggle">
+            ☰
+        </div>
+
+        <!-- Navigation -->
+        <nav class="nav-container" id="nav-container">
+            <ul class="nav-links">
+                <li><a href="{% url 'inventory' %}">Dashboard</a></li>
+                <li><a href="#"></a></li>
+                <li><a href="#"></a></li>
+                <li><a href="#"></a></li>
+                <li><a href="#"></a></li>
+                <li><a href="#"></a></li>
+            </ul>
+        </nav>
+    </div>
+
+    <!-- Global Search -->
+    <div class="nav-search">
+        <form method="POST" action="{% url 'home' %}">
+            {% csrf_token %}
+            <input type="text"
+                   name="search_value"
+                   placeholder="Search items by part number or vendor..."
+                   value="{{ search_query }}">
+            <button type="submit" class="search-btn">Search</button>
+        </form>
+
+        {% block search_results %}{% endblock %}
+    </div>
+
+</header>
+
+<!-- ================= MAIN CONTENT ================= -->
+<main>
+    {% block content %}
+    {% endblock %}
+</main>
+
+<!-- ================= FOOTER ================= -->
+<footer>
+    <p>&copy; 2026 ABB Inventory System</p>
+</footer>
+
+<!-- ================= GLOBAL JS ================= -->
+<script>
+document.getElementById("menu-toggle").addEventListener("click", function() {
+    document.getElementById("nav-container").classList.toggle("active");
+});
+</script>
+
+{% block extra_js %}{% endblock %}
+
+</body>
+</html>
