@@ -24,8 +24,13 @@
             </a>
         </div>
 
+        <!-- Hamburger Toggle -->
+        <div class="menu-toggle" id="menu-toggle">
+            ☰
+        </div>
+
         <!-- Navigation -->
-        <nav class="nav-container">
+        <nav class="nav-container" id="nav-container">
             <ul class="nav-links">
                 <li><a href="#">Dashboard</a></li>
                 <li><a href="#">Inventory</a></li>
@@ -39,8 +44,33 @@
     </div>
 
     <div class="nav-search">
-        <input type="text" 
-               placeholder="Search items by part number or vendor...">
+        <form method="POST" action="{% url 'home' %}" style="width: 100%; display: flex; gap: 10px;">
+            {% csrf_token %}
+            <input type="text" name="search_value" id="search-input"
+                   placeholder="Search items by part number or vendor..."
+                   value="{{ search_query }}">
+            <button type="submit" class="search-btn">Search</button>
+        </form>
+        
+        {% if search_results %}
+            <div id="results-container" class="search-results">
+                <h3>Search Results ({{ search_results|length }} found)</h3>
+                <ul class="results-list">
+                    {% for part in search_results %}
+                        <li class="result-item">
+                            <div class="result-id">ID: {{ part.id }}</div>
+                            <div class="result-name">Part: {{ part.part.part_name }}</div>
+                            <div class="result-machine">Machine: {{ part.machine.machine_name }}</div>
+                            <div class="result-quantity">Quantity Left: {{ part.quantity_left }}</div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% elif search_query %}
+            <div id="results-container" class="no-results">
+                <p>No machine parts found matching "{{ search_query }}". Try searching by part ID or name.</p>
+            </div>
+        {% endif %}
     </div>
 
 </header>
@@ -74,12 +104,11 @@
             reporting tools, or software enhancements tailored to their specific operational needs.
         </p>
         <p> 
-            Requirements submitted by department managers will be treated as high-priority requests. 
+            Requirements submitted by department managers will be treated as high-priority requests 
             and evaluated first to ensure alignment with operational goals, performance improvement, 
             and overall departmental efficiency.
         </p>
-
-    </div>
+        </div>
 
         <form method="POST" action="{% url 'handle_requirement' %}">
             {% csrf_token %}
@@ -119,6 +148,13 @@
 <footer>
     <p>&copy; 2026 ABB Inventory System</p>
 </footer>
+
+<!-- Toggle Script -->
+<script>
+document.getElementById("menu-toggle").addEventListener("click", function() {
+    document.getElementById("nav-container").classList.toggle("active");
+});
+</script>
 
 </body>
 </html>

@@ -14,42 +14,33 @@ body {
 }
 
 /* ============================= */
-/* HEADER WRAPPER */
+/* HEADER */
 /* ============================= */
 .main-header {
     width: 100%;
     background-color: #0F172A;
+    position: relative;
 }
 
 /* ============================= */
-/* NAV TOP BAR */
+/* TOP NAV */
 /* ============================= */
 .nav-top {
-    height: 70px;              /* Force header height */
+    height: 70px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 30px;
+    padding: 0 40px;
     background-color: #1E293B;
 }
 
-/* ============================= */
-/* LOGO FIX */
-/* ============================= */
-.nav-top a {
-    display: flex;
-    align-items: center;
-}
-
 .logo-image {
-    height: 42px;      /* Control logo size */
+    height: 42px;
     width: auto;
-    max-height: 42px;
-    object-fit: contain;
 }
 
 /* ============================= */
-/* NAVIGATION LINKS */
+/* NAV LINKS */
 /* ============================= */
 .nav-links {
     list-style: none;
@@ -62,7 +53,7 @@ body {
     color: #CBD5E1;
     font-weight: 500;
     padding: 8px 16px;
-    border-radius: 30px;
+    border-radius: 6px;
     transition: 0.3s ease;
 }
 
@@ -75,15 +66,20 @@ body {
 /* SEARCH BAR */
 /* ============================= */
 .nav-search {
-    padding: 18px 30px;
+    padding: 20px 40px;
     background-color: #334155;
 }
 
+.nav-search form {
+    display: flex;
+    gap: 12px;
+}
+
 .nav-search input {
-    width: 100%;
-    padding: 12px 20px;
-    border-radius: 30px;
-    border: none;
+    flex: 1;
+    padding: 12px 15px;
+    border: 1px solid #64748B;
+    border-radius: 4px;
     font-size: 14px;
     background-color: #475569;
     color: white;
@@ -98,11 +94,136 @@ body {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.4);
 }
 
+.search-btn {
+    padding: 10px 22px;
+    background-color: #3B82F6;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: 0.2s;
+}
+
+.search-btn:hover {
+    background-color: #2563EB;
+}
+
 /* ============================= */
-/* MAIN CONTENT */
+/* MAIN */
 /* ============================= */
 main {
-    padding: 40px;
+    padding: 0;
+}
+
+/* ============================= */
+/* FULL WIDTH REQUIREMENT SECTION */
+/* ============================= */
+.requirement-wrapper {
+    width: 100%;
+}
+
+.requirement-card {
+    width: 100%;
+    background: #1E293B;
+    color: #F8FAFC;
+    padding: 80px 120px;
+}
+
+/* ============================= */
+/* REQUIREMENT HEADER */
+/* ============================= */
+.requirement-header {
+    text-align: center;
+    margin-bottom: 50px;
+}
+
+.requirement-header h2 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    position: relative;
+}
+
+/* Accent underline */
+.requirement-header h2::after {
+    content: "";
+    display: block;
+    width: 100px;
+    height: 4px;
+    background-color: #2563EB;
+    margin: 14px auto 0;
+}
+
+.requirement-header p {
+    font-size: 15px;
+    line-height: 1.9;
+    max-width: 900px;
+    margin: 0 auto 20px auto;
+    color: #CBD5E1;
+}
+
+.requirement-header strong {
+    color: #38BDF8;
+}
+
+/* ============================= */
+/* FORM */
+/* ============================= */
+.form-group {
+    margin-bottom: 30px;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #E2E8F0;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 14px;
+    border-radius: 6px;
+    border: 1px solid #475569;
+    background-color: #334155;
+    color: white;
+    font-size: 14px;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #2563EB;
+    box-shadow: 0 0 0 2px rgba(37,99,235,0.2);
+}
+
+/* ============================= */
+/* BUTTON */
+/* ============================= */
+.submit-btn {
+    display: block;
+    margin: 30px auto 0 auto;
+    background: #2563EB;
+    color: white;
+    padding: 14px 32px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    transition: 0.2s ease;
+}
+
+.submit-btn:hover {
+    background: #1D4ED8;
+    transform: translateY(-2px);
 }
 
 /* ============================= */
@@ -116,110 +237,15 @@ footer {
 }
 
 /* ============================= */
-/* REQUIREMENT SECTION */
+/* MOBILE RESPONSIVE */
 /* ============================= */
-.requirement-wrapper {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 70vh;
-}
-
-.requirement-card {
-    background: #1E293B;
-    color: #F8FAFC;
-    width: 650px;
-    max-width: 95%;
-    padding: 40px;
-    border-radius: 16px;
-    box-shadow: 0 15px 35px rgba(0,0,0,0.2);
-}
-
-.requirement-header {
-    text-align: center;
-    margin-bottom: 25px;
-}
-
-.requirement-header h2 {
-    font-size: 22px;
-    margin-bottom: 10px;
-}
-
-.requirement-header p {
-    font-size: 14px;
-    color: #CBD5E1;
-    line-height: 1.6;
-}
-
-/* ============================= */
-/* FORM */
-/* ============================= */
-.form-group {
-    margin-bottom: 20px;
-}
-
-.form-group label {
-    display: block;
-    margin-bottom: 6px;
-    font-weight: 600;
-}
-
-.form-group input,
-.form-group select,
-.form-group textarea {
-    width: 100%;
-    padding: 10px;
-    border-radius: 8px;
-    border: 1px solid #475569;
-    background-color: #334155;
-    color: white;
-}
-
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus {
-    outline: none;
-    border-color: #2563EB;
-}
-
-/* BUTTON */
-.submit-btn {
-    background: #2563EB;
-    color: white;
-    padding: 12px 24px;
-    border: none;
-    border-radius: 30px;
-    cursor: pointer;
-}
-
-.submit-btn:hover {
-    background: #1D4ED8;
-}
-
-/* ============================= */
-/* RESPONSIVE */
-/* ============================= */
-@media (max-width: 768px) {
-
-    .nav-top {
-        flex-direction: column;
-        justify-content: center;
-        height: auto;
-        padding: 15px;
-        gap: 10px;
-    }
-
-    .nav-links {
-        flex-direction: column;
-        gap: 10px;
-        align-items: center;
-    }
-
-    .nav-search {
-        padding: 15px;
-    }
+@media (max-width: 1024px) {
 
     .requirement-card {
-        padding: 25px;
+        padding: 60px 40px;
+    }
+
+    .form-group {
+        max-width: 100%;
     }
 }

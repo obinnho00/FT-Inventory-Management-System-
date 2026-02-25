@@ -22,4 +22,5 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', views.Home, name='home'),
     path('submit-requirement/', views.Handle_requirement_submission, name='handle_requirement'),
+    path('search-machine-part/', views.Handle_machine_part_search_values_part, name='search_machine_part'),
 ]
