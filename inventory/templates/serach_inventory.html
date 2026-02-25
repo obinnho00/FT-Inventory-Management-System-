@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+{% load static %}
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ABB Inventory System{% endblock %}</title>
+
+    <link rel="stylesheet" href="{% static 'Css/Home.css' %}">
+</head>
+
+<body>
+
+<header class="main-header">
+
+    <div class="nav-top">
+
+        <!-- Logo -->
+        <div class="logo-container">
+            <a href="/">
+                <img src="{% static 'image/Abblogo.png' %}" 
+                     alt="ABB Logo" 
+                     class="logo-image">
+            </a>
+        </div>
+
+        <!-- Hamburger Toggle -->
+        <div class="menu-toggle" id="menu-toggle">
+            ☰
+        </div>
+
+        <!-- Navigation -->
+        <nav class="nav-container" id="nav-container">
+            <ul class="nav-links">
+                <li><a href="#">Dashboard</a></li>
+                <li><a href="#">Inventory</a></li>
+                <li><a href="#">Departments</a></li>
+                <li><a href="#">Vendors</a></li>
+                <li><a href="#">Reports</a></li>
+                <li><a href="#">Configuration</a></li>
+            </ul>
+        </nav>
+
+    </div>
+
+    <div class="nav-search">
+        <form method="POST" action="{% url 'home' %}" style="width: 100%; display: flex; gap: 10px;">
+            {% csrf_token %}
+            <input type="text" name="search_value" id="search-input"
+                   placeholder="Search items by part number or vendor..."
+                   value="{{ search_query }}">
+            <button type="submit" class="search-btn">Search</button>
+        </form>
+        
+        {% if search_results %}
+            <div id="results-container" class="search-results">
+                <h3>Search Results ({{ search_results|length }} found)</h3>
+                <ul class="results-list">
+                    {% for part in search_results %}
+                        <li class="result-item">
+                            <div class="result-id">ID: {{ part.id }}</div>
+                            <div class="result-name">Part: {{ part.part.part_name }}</div>
+                            <div class="result-machine">Machine: {{ part.machine.machine_name }}</div>
+                            <div class="result-quantity">Quantity Left: {{ part.quantity_left }}</div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% elif search_query %}
+            <div id="results-container" class="no-results">
+                <p>No machine parts found matching "{{ search_query }}". Try searching by part ID or name.</p>
+            </div>
+        {% endif %}
+    </div>
+
+</header>
+
+<main>
+{% block content %}
+
+{% endblock %}
+</main>
+
+<footer>
+    <p>&copy; 2026 ABB Inventory System</p>
+</footer>
+
+</body>
+</html>
