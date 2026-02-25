@@ -278,60 +278,35 @@
             <table id="inventoryTable" class="table table-hover">
                 <thead>
                     <tr>
-                        <th>Building</th>
-                        <th>Department</th>
-                        <th>Machine</th>
-                        <th>Part Name</th>
-                        <th>Model Number</th>
-                        <th>Quantity</th>
-                        <th>Vendors</th>
+                        {% for col in table_columns %}
+                            <th>{{ col.header }}</th>
+                        {% endfor %}
                     </tr>
                 </thead>
                 <tbody>
-                {% for item in parts %}
-                    <tr onclick="openModal(
-                        '{{ item.part.part_name|escapejs }}',
-                        '{{ item.part.model_number|escapejs }}',
-                        '{{ item.machine.machine_name|escapejs }}',
-                        '{{ item.quantity_left }}',
-                        '{{ item.placement_location|escapejs }}',
-                        '{{ item.machine.department.name|escapejs }}',
-                        '{% if item.machine.department.building %}{{ item.machine.department.building.name|escapejs }}{% else %}-{% endif %}'
-                    )">
-                        <td>
-                            {% if item.machine.department.building %}
-                                {{ item.machine.department.building.name }}
-                            {% else %}
-                                -
-                            {% endif %}
-                        </td>
-                        <td><strong>{{ item.machine.department.name }}</strong></td>
-                        <td>{{ item.machine.machine_name }}</td>
-                        <td>{{ item.part.part_name }}</td>
-                        <td>{{ item.part.model_number }}</td>
-                        <td>
-                            {% if item.quantity_left <= 2 %}
-                                <span class="qty-low">{{ item.quantity_left }}</span>
-                            {% else %}
-                                <span class="qty-normal">{{ item.quantity_left }}</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% for link in item.part.vendor_links.all %}
-                                <div>
-                                    {{ link.vendor.name }}
-                                    {% if link.manufacturer %}
-                                        ({{ link.manufacturer.name }})
+                {% for row in data_rows %}
+                    <tr>
+                        {% for cell in row %}
+                            <td>
+                                {% if cell.type == 'quantity' %}
+                                    {% if cell.is_low %}
+                                        <span class="qty-low">{{ cell.value }}</span>
+                                    {% else %}
+                                        <span class="qty-normal">{{ cell.value }}</span>
                                     {% endif %}
-                                </div>
-                            {% empty %}
-                                No Vendor
-                            {% endfor %}
-                        </td>
+                                {% elif cell.type == 'vendors' %}
+                                    {% for vendor in cell.value %}
+                                        <div>{{ vendor }}</div>
+                                    {% endfor %}
+                                {% else %}
+                                    {{ cell.value }}
+                                {% endif %}
+                            </td>
+                        {% endfor %}
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="7" style="text-align:center; padding:30px; color:#6c757d;">
+                        <td colspan="{{ table_columns|length }}" style="text-align:center; padding:30px; color:#6c757d;">
                             No inventory records found.
                         </td>
                     </tr>
