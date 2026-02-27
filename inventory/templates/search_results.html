@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <h4 style="color:white;">
+        Search Results for: "{{ search_query }}"
+    </h4>
+
+    <table class="table table-dark table-hover mt-3">
+        <thead>
+            <tr>
+                <th>Building</th>
+                <th>Department</th>
+                <th>Machine</th>
+                <th>Part</th>
+                <th>Model</th>
+                <th>Quantity Left</th>
+                <th>Location</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in results %}
+            <tr>
+                <td>{{ item.machine.department.building.name }}</td>
+                <td>{{ item.machine.department.name }}</td>
+                <td>{{ item.machine.machine_name }}</td>
+                <td>{{ item.part.part_name }}</td>
+                <td>{{ item.part.model_number }}</td>
+                <td>
+                    {% if item.quantity_left <= 2 %}
+                        <span style="color:red; font-weight:700;">
+                            {{ item.quantity_left }}
+                        </span>
+                    {% else %}
+                        <span style="color:lime; font-weight:600;">
+                            {{ item.quantity_left }}
+                        </span>
+                    {% endif %}
+                </td>
+                <td>{{ item.placement_location }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7" style="text-align:center;">
+                    No results found.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+</div>
+{% endblock %}

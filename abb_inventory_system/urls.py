@@ -22,14 +22,19 @@ from inventory import views
 from django.contrib import admin
 from django.urls import path
 from inventory import views
+from django.conf.urls.static import static
+from django.conf import settings
 
 urlpatterns = [
     path('admin/', admin.site.urls),
 
     path('', views.Home, name='home'),
 
-    path('submit-requirement/', views.Handle_requirement_submission, name='handle_requirement'),
+    path('submit-requirement/', views.handle_requirement_submission, name='submit_requirement'),
+    path("inventory/search/", views.inventory_search, name="inventory_search"),
 
     # MAIN INVENTORY PAGE (handles search + department filter)
     path('inventory/', views.inventory_view, name='inventory'),
-]
+]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+

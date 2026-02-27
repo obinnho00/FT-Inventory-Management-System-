@@ -92,31 +92,21 @@ TEMPLATES = [
 WSGI_APPLICATION = 'abb_inventory_system.wsgi.application'
 
 import dj_database_url
-# Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL is not set in environment")
 
 DATABASES = {
-    "default": dj_database_url.config(
-        default=os.environ.get("DATABASE_URL"),
+    "default": dj_database_url.parse(
+        DATABASE_URL,
         conn_max_age=600,
-        ssl_require=(not DEBUG),
+        ssl_require=not DEBUG,
     )
 }
 
-# If DATABASE_URL wasn't provided, build the DATABASES dict from
-# individual POSTGRES_* variables so Django always has an ENGINE value.
-if not DATABASES.get("default"):
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.environ.get("POSTGRES_DB", "postgres"),
-            "USER": os.environ.get("POSTGRES_USER", "postgres"),
-            "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
-            "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
-            "PORT": os.environ.get("POSTGRES_PORT", "5432"),
-        }
-    }
+
 
 
 # Password validation
@@ -159,11 +149,3 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 
-from django.conf.urls.static import static
-from django.conf import settings
-urlpatterns = [
-    ...
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
-#print("DJANGO SETTINGS LOADED:", __file__)
-#print("POSTGRES_HOST USED:", os.environ.get("POSTGRES_HOST"))

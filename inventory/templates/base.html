@@ -48,16 +48,13 @@
 
     <!-- Global Search -->
     <div class="nav-search">
-        <form method="POST" action="{% url 'home' %}">
-            {% csrf_token %}
+        <form method="GET"  action="{% url 'inventory_search' %}">
             <input type="text"
-                   name="search_value"
-                   placeholder="Search items by part number or vendor..."
-                   value="{{ search_query }}">
+                name="q"
+                placeholder="Search by part number or vendor..."
+                value="{{ request.GET.q }}">
             <button type="submit" class="search-btn">Search</button>
         </form>
-
-        {% block search_results %}{% endblock %}
     </div>
 
 </header>

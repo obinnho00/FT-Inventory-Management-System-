@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect
 from django.http import HttpResponse
 from django.contrib import messages
+from django.db.models import Q
 from .models import Department, UserRequirement, Machine, MachinePart
 
 
@@ -32,28 +33,30 @@ def Home(request):
     return render(request, 'Home.html', context)
 
 
-def Handle_requirement_submission(request):
+def handle_requirement_submission(request):
     if request.method == 'POST':
         name = request.POST.get('name')
         department_id = request.POST.get('department')
         message = request.POST.get('message')
-        
+
         try:
             department = Department.objects.get(id=department_id)
+
             UserRequirement.objects.create(
                 department=department,
-                requirement_description=f"From: {name}\n\n{message}"
+                name_of_requester=name,
+                requirement_description=message
             )
+
             messages.success(request, 'Thank you! Your requirement has been submitted successfully.')
             return redirect('home')
+
         except Department.DoesNotExist:
             messages.error(request, 'Invalid department selected.')
             return redirect('home')
-    
+
     return HttpResponse("Invalid request method.", status=405)
 
-
-#  this function will handle  the finding the machine part based on the user entry if numeric entry is there then it will search based on the id and if text entry is there then it will search based on the name of the machine part
 
 from django.shortcuts import render
 from django.db.models import Prefetch
@@ -63,142 +66,215 @@ from .models import (
     VendorPart
 )
 
+
+
 def inventory_view(request):
 
     selected_department = request.GET.get("department")
 
     departments = Department.objects.select_related("building").all()
 
-    # Base queryset (LOAD EVERYTHING)
     parts = MachinePart.objects.select_related(
         "machine",
         "machine__department",
         "machine__department__building",
         "part"
     ).prefetch_related(
-        "part__vendor_links__vendor",
-        "part__vendor_links__manufacturer"
+        "part__vendorpart_set__vendor",
+        "part__vendorpart_set__manufacturer"
     )
 
-    # FILTER IF DEPARTMENT SELECTED
     if selected_department:
-        parts = parts.filter(
-            machine__department__id=selected_department
-        )
+        parts = parts.filter(machine__department__id=selected_department)
 
-    # DYNAMICALLY GET ALL FIELDS FROM MachinePart MODEL
     table_columns = []
-    
-    # Get all fields from the MachinePart model
+
     for field in MachinePart._meta.get_fields():
-        field_name = field.name
-        field_type = field.__class__.__name__
-        
-        # Skip reverse relations and internal fields
-        if field_type in ['ManyToOneRel', 'ManyToManyRel']:
+
+        # Skip reverse relations
+        if field.auto_created and not field.concrete:
             continue
-            
-        # Handle different field types dynamically
-        if field_type == 'ForeignKey':
-            if field_name == 'machine':
-                # Add machine-related columns
-                table_columns.append({
-                    'header': 'Building',
-                    'path': 'machine.department.building.name',
-                    'type': 'text'
-                })
-                table_columns.append({
-                    'header': 'Department',
-                    'path': 'machine.department.name',
-                    'type': 'text'
-                })
-                table_columns.append({
-                    'header': 'Machine',
-                    'path': 'machine.machine_name',
-                    'type': 'text'
-                })
-            elif field_name == 'part':
-                # Add part-related columns
-                table_columns.append({
-                    'header': 'Part Name',
-                    'path': 'part.part_name',
-                    'type': 'text'
-                })
-                table_columns.append({
-                    'header': 'Model Number',
-                    'path': 'part.model_number',
-                    'type': 'text'
-                })
+
+        field_name = field.name
+
+        # ---- HANDLE FOREIGN KEYS DYNAMICALLY ----
+        if field.many_to_one:
+
+            related_model = field.related_model
+
+            # Machine FK
+            if related_model.__name__ == "Machine":
+                table_columns.extend([
+                    {
+                        "header": "Building",
+                        "path": "machine.department.building.name",
+                        "type": "text"
+                    },
+                    {
+                        "header": "Department",
+                        "path": "machine.department.name",
+                        "type": "text"
+                    },
+                    {
+                        "header": "Machine",
+                        "path": "machine.name",
+                        "type": "text"
+                    }
+                ])
+
+            # Part FK
+            elif related_model.__name__ == "Part":
+                table_columns.extend([
+                    {
+                        "header": "Part Name",
+                        "path": "part.name",
+                        "type": "text"
+                    },
+                    {
+                        "header": "Model Number",
+                        "path": "part.model_number",
+                        "type": "text"
+                    }
+                ])
+
+        # ---- HANDLE REGULAR FIELDS ----
         else:
-            # Add regular fields from MachinePart
-            if field_name not in ['id', 'machine', 'part']:
-                # Convert field name to readable header
-                header = field_name.replace('_', ' ').title()
+            if field_name not in ["id", "machine", "part"]:
+                header = field_name.replace("_", " ").title()
+
                 table_columns.append({
-                    'header': header,
-                    'path': field_name,
-                    'type': 'quantity' if 'quantity' in field_name.lower() else 'text'
+                    "header": header,
+                    "path": field_name,
+                    "type": "quantity" if "quantity" in field_name.lower() else "text"
                 })
-    
-    # Add vendors column (special handling for many-to-many through Part)
+
+    # ---- ADD VENDORS DYNAMICALLY ----
     table_columns.append({
-        'header': 'Vendors',
-        'path': 'part.vendor_links.all',
-        'type': 'vendors'
+        "header": "Vendors",
+        "path": "part.vendorpart_set.all",
+        "type": "vendors"
     })
-    
-    # Prepare data rows dynamically
+
     data_rows = []
+
     for item in parts:
         row = []
+
         for col in table_columns:
-            path = col['path']
-            cell_type = col['type']
-            
-            # Navigate through the path dynamically
             value = item
+
             try:
-                for attr in path.split('.'):
-                    if attr == 'all':
+                for attr in col["path"].split("."):
+                    if attr == "all":
                         value = value.all()
                         break
                     value = getattr(value, attr, None)
                     if value is None:
                         break
-                        
-                # Format the value based on type
+
                 if value is None:
-                    row.append({'value': '-', 'type': 'text'})
-                elif cell_type == 'vendors':
-                    vendors_list = []
+                    row.append({"value": "-", "type": "text"})
+
+                elif col["type"] == "vendors":
+                    vendors = []
                     for link in value:
-                        vendor_text = link.vendor.name if link.vendor else ''
+                        text = link.vendor.name if link.vendor else ""
                         if link.manufacturer:
-                            vendor_text += f' ({link.manufacturer.name})'
-                        vendors_list.append(vendor_text)
+                            text += f" ({link.manufacturer.name})"
+                        vendors.append(text)
+
                     row.append({
-                        'value': vendors_list if vendors_list else ['No Vendor'],
-                        'type': 'vendors'
+                        "value": vendors if vendors else ["No Vendor"],
+                        "type": "vendors"
                     })
-                elif cell_type == 'quantity':
+
+                elif col["type"] == "quantity":
                     row.append({
-                        'value': value,
-                        'type': 'quantity',
-                        'is_low': value <= 2 if isinstance(value, (int, float)) else False
+                        "value": value,
+                        "type": "quantity",
+                        "is_low": value <= 2 if isinstance(value, (int, float)) else False
                     })
+
                 else:
-                    row.append({'value': str(value), 'type': 'text'})
+                    row.append({"value": str(value), "type": "text"})
+
             except Exception:
-                row.append({'value': '-', 'type': 'text'})
-                
+                row.append({"value": "-", "type": "text"})
+
         data_rows.append(row)
 
     context = {
         "departments": departments,
-        "parts": parts,
         "selected_department": selected_department,
         "table_columns": table_columns,
         "data_rows": data_rows,
+    }
+
+    return render(request, "dashboard.html", context)
+
+
+def inventory_search(request):
+    query = request.GET.get("q", "").strip()
+
+    results = MachinePart.objects.select_related(
+        "machine",
+        "machine__department",
+        "machine__department__building",
+        "part"
+    ).prefetch_related(
+        "part__vendorpart_set__vendor"
+    )
+
+    if query:
+        results = results.filter(
+            Q(part__model_number__icontains=query) |
+            Q(part__name__icontains=query) |
+            Q(part__vendorpart__vendor__name__icontains=query)
+        ).distinct()
+
+    # ===============================
+    # Dynamic Columns
+    # ===============================
+
+    table_columns = []
+
+    if results.exists():
+        sample = results.first()
+
+        table_columns = [
+            {"header": "Building"},
+            {"header": "Department"},
+            {"header": "Machine"},
+            {"header": "Part Name"},
+            {"header": "Model"},
+            {"header": "Quantity Left"},
+            {"header": "Location"},
+        ]
+
+    data_rows = []
+
+    for item in results:
+        row = [
+            {"value": item.machine.department.building.name},
+            {"value": item.machine.department.name},
+            {"value": item.machine.name},
+            {"value": item.part.name},
+            {"value": item.part.model_number},
+            {
+                "value": item.quantity_left,
+                "type": "quantity",
+                "is_low": item.quantity_left <= 5
+            },
+            {"value": item.placement_location}
+        ]
+        data_rows.append(row)
+
+    context = {
+        "table_columns": table_columns,
+        "data_rows": data_rows,
+        "departments": Department.objects.all(),
+        "selected_department": None,
+        "search_query": query
     }
 
     return render(request, "dashboard.html", context)
