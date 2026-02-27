@@ -7,6 +7,17 @@ from django.db.models import Q
 from .models import Department, UserRequirement, Machine, MachinePart, VendorPart, Part
 
 
+def _safe_part_image_url(part):
+    if not part.image:
+        return ""
+    try:
+        if part.image.storage.exists(part.image.name):
+            return part.image.url
+    except Exception:
+        return ""
+    return ""
+
+
 
 
 # function for the home page of the inventory system
@@ -262,7 +273,7 @@ def inventory_view(request):
             "location": item.placement_location,
             "description": item.part.description,
             "compatibility_notes": item.compatibility_notes,
-            "image_url": item.part.image.url if item.part.image else "",
+            "image_url": _safe_part_image_url(item.part),
             "vendors": vendor_details,
         })
 
@@ -355,7 +366,7 @@ def inventory_search(request):
             "location": item.placement_location,
             "description": item.part.description,
             "compatibility_notes": item.compatibility_notes,
-            "image_url": item.part.image.url if item.part.image else "",
+            "image_url": _safe_part_image_url(item.part),
             "vendors": vendor_details,
         })
 
