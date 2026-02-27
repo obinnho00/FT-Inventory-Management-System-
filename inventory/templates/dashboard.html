@@ -226,6 +226,24 @@
         color: white;
         margin-bottom: 20px;
     }
+
+    .modal-image-wrap {
+        margin-bottom: 16px;
+        text-align: center;
+    }
+
+    .modal-image {
+        max-width: 220px;
+        max-height: 220px;
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 4px;
+        display: none;
+    }
+
+    .modal-image-fallback {
+        font-size: 13px;
+        color: #cbd5e1;
+    }
     
     .modal-detail {
         margin-bottom: 12px;
@@ -243,6 +261,22 @@
     .modal-detail span {
         color: white;
         font-size: 14px;
+    }
+
+    .vendor-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    .vendor-list li {
+        margin-bottom: 10px;
+        font-size: 14px;
+    }
+
+    .vendor-list a {
+        color: #93c5fd;
+        text-decoration: underline;
     }
 
     /* DataTables Top & Bottom Info Text White */
@@ -321,7 +355,7 @@
                 </thead>
                 <tbody>
                 {% for row in data_rows %}
-                    <tr>
+                    <tr data-row-index="{{ forloop.counter0 }}">
                         {% for cell in row %}
                             <td>
                                 {% if cell.type == 'quantity' %}
@@ -349,20 +383,37 @@
 
 </div>
 
+{{ row_details|json_script:"rowDetailsData" }}
+
 <div id="popup" class="modal-overlay">
     <div class="modal-content">
         <button class="modal-close" onclick="closeModal()">×</button>
         
         <h3 id="modalPart" class="modal-title"></h3>
+
+        <div class="modal-image-wrap">
+            <img id="modalImage" class="modal-image" alt="Part Image">
+            <div id="modalImageFallback" class="modal-image-fallback">No image available</div>
+        </div>
         
         <div class="modal-detail">
             <strong>Model Number:</strong>
             <span id="modalModel"></span>
         </div>
+
+        <div class="modal-detail">
+            <strong>Description:</strong>
+            <span id="modalDescription"></span>
+        </div>
         
         <div class="modal-detail">
             <strong>Machine:</strong>
             <span id="modalMachine"></span>
+        </div>
+
+        <div class="modal-detail">
+            <strong>Machine Area:</strong>
+            <span id="modalMachineLocation"></span>
         </div>
         
         <div class="modal-detail">
@@ -381,21 +432,93 @@
         </div>
         
         <div class="modal-detail">
-            <strong>Location:</strong>
+            <strong>Placement Point:</strong>
             <span id="modalLocation"></span>
+        </div>
+
+        <div class="modal-detail">
+            <strong>Compatibility:</strong>
+            <span id="modalCompatibility"></span>
+        </div>
+
+        <div class="modal-detail">
+            <strong>Usage Instructions:</strong>
+            <span id="modalUsage"></span>
+        </div>
+
+        <div class="modal-detail">
+            <strong>Vendors:</strong>
+            <div id="modalVendors"></div>
         </div>
     </div>
 </div>
 
 <script>
-function openModal(part, model, machine, qty, location, department, building) {
-    document.getElementById("modalPart").innerText = part;
-    document.getElementById("modalModel").innerText = model;
-    document.getElementById("modalMachine").innerText = machine;
-    document.getElementById("modalQty").innerText = qty;
-    document.getElementById("modalLocation").innerText = location || "Not specified";
-    document.getElementById("modalDepartment").innerText = department;
-    document.getElementById("modalBuilding").innerText = building || "-";
+function openModal(details) {
+    const data = details || {};
+
+    document.getElementById("modalPart").innerText = data.part || "-";
+    document.getElementById("modalModel").innerText = data.model || "-";
+    document.getElementById("modalDescription").innerText = data.description || "-";
+    document.getElementById("modalMachine").innerText = data.machine || "-";
+    document.getElementById("modalMachineLocation").innerText = data.machine_location || "-";
+    document.getElementById("modalQty").innerText = data.quantity ?? "-";
+    document.getElementById("modalLocation").innerText = data.location || "Not specified";
+    document.getElementById("modalDepartment").innerText = data.department || "-";
+    document.getElementById("modalBuilding").innerText = data.building || "-";
+    document.getElementById("modalCompatibility").innerText = data.compatibility_notes || "-";
+    document.getElementById("modalUsage").innerText = data.compatibility_notes || "-";
+
+    const image = document.getElementById("modalImage");
+    const imageFallback = document.getElementById("modalImageFallback");
+    if (data.image_url) {
+        image.src = data.image_url;
+        image.style.display = "inline-block";
+        imageFallback.style.display = "none";
+    } else {
+        image.removeAttribute("src");
+        image.style.display = "none";
+        imageFallback.style.display = "block";
+    }
+
+    const vendorsContainer = document.getElementById("modalVendors");
+    vendorsContainer.innerHTML = "";
+    const vendors = Array.isArray(data.vendors) ? data.vendors : [];
+
+    if (!vendors.length) {
+        vendorsContainer.innerText = "No vendor information";
+    } else {
+        const list = document.createElement("ul");
+        list.className = "vendor-list";
+
+        vendors.forEach((vendor) => {
+            const item = document.createElement("li");
+            const name = vendor.vendor || "-";
+            const maker = vendor.manufacturer && vendor.manufacturer !== "-"
+                ? ` (${vendor.manufacturer})`
+                : "";
+            const phone = vendor.phone ? ` | ${vendor.phone}` : "";
+
+            if (vendor.website) {
+                const link = document.createElement("a");
+                link.href = vendor.website;
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+                link.textContent = `${name}${maker}`;
+                item.appendChild(link);
+
+                if (phone) {
+                    item.appendChild(document.createTextNode(phone));
+                }
+            } else {
+                item.textContent = `${name}${maker}${phone}`;
+            }
+
+            list.appendChild(item);
+        });
+
+        vendorsContainer.appendChild(list);
+    }
     
     document.getElementById("popup").style.display = "flex";
 }
@@ -421,12 +544,13 @@ document.getElementById("popup").addEventListener("click", function(e) {
 
 <script>
 $(document).ready(function() {
+    const rowDetails = JSON.parse(document.getElementById("rowDetailsData").textContent || "[]");
 
     if ($.fn.DataTable.isDataTable('#inventoryTable')) {
         $('#inventoryTable').DataTable().destroy();
     }
 
-    $('#inventoryTable').DataTable({
+    const table = $('#inventoryTable').DataTable({
         pageLength: 50,
         lengthMenu: [[5,10,25, 50, 100, -1], [5,10,25, 50, 100, "All"]],
         order: [],   // <-- REMOVE hardcoded column sorting
@@ -444,6 +568,45 @@ $(document).ready(function() {
                 previous: "Previous"
             }
         }
+    });
+
+    const headerIndex = {};
+    $('#inventoryTable thead th').each(function(index) {
+        const key = $(this).text().trim().toLowerCase();
+        headerIndex[key] = index;
+    });
+
+    function getCellText(cells, possibleHeaders) {
+        for (const header of possibleHeaders) {
+            const index = headerIndex[header.toLowerCase()];
+            if (index !== undefined && cells.eq(index).length) {
+                return cells.eq(index).text().trim();
+            }
+        }
+        return "-";
+    }
+
+    $('#inventoryTable tbody').on('click', 'tr', function() {
+        const rowIndex = parseInt($(this).attr('data-row-index'), 10);
+        if (!Number.isNaN(rowIndex) && rowDetails[rowIndex]) {
+            openModal(rowDetails[rowIndex]);
+            return;
+        }
+
+        const cells = $(this).find('td');
+        if (!cells.length) {
+            return;
+        }
+
+        openModal({
+            part: getCellText(cells, ['Part Name']),
+            model: getCellText(cells, ['Model Number', 'Model']),
+            machine: getCellText(cells, ['Machine']),
+            quantity: getCellText(cells, ['Quantity Left']),
+            location: getCellText(cells, ['Placement Location', 'Location']),
+            department: getCellText(cells, ['Department']),
+            building: getCellText(cells, ['Building'])
+        });
     });
 
 });

@@ -156,6 +156,7 @@ def inventory_view(request):
     })
 
     data_rows = []
+    row_details = []
 
     for item in parts:
         row = []
@@ -203,11 +204,36 @@ def inventory_view(request):
 
         data_rows.append(row)
 
+        vendor_details = []
+        for link in item.part.vendorpart_set.all():
+            vendor_details.append({
+                "vendor": link.vendor.name if link.vendor else "-",
+                "manufacturer": link.manufacturer.name if link.manufacturer else "-",
+                "website": link.vendor.website if link.vendor and link.vendor.website else "",
+                "phone": link.vendor.phone if link.vendor and link.vendor.phone else "",
+            })
+
+        row_details.append({
+            "part": item.part.name,
+            "model": item.part.model_number,
+            "machine": item.machine.name,
+            "machine_location": item.machine.location,
+            "department": item.machine.department.name,
+            "building": item.machine.department.building.name,
+            "quantity": item.quantity_left,
+            "location": item.placement_location,
+            "description": item.part.description,
+            "compatibility_notes": item.compatibility_notes,
+            "image_url": item.part.image.url if item.part.image else "",
+            "vendors": vendor_details,
+        })
+
     context = {
         "departments": departments,
         "selected_department": selected_department,
         "table_columns": table_columns,
         "data_rows": data_rows,
+        "row_details": row_details,
     }
 
     return render(request, "dashboard.html", context)
@@ -222,7 +248,8 @@ def inventory_search(request):
         "machine__department__building",
         "part"
     ).prefetch_related(
-        "part__vendorpart_set__vendor"
+        "part__vendorpart_set__vendor",
+        "part__vendorpart_set__manufacturer"
     )
 
     if query:
@@ -252,6 +279,7 @@ def inventory_search(request):
         ]
 
     data_rows = []
+    row_details = []
 
     for item in results:
         row = [
@@ -269,9 +297,34 @@ def inventory_search(request):
         ]
         data_rows.append(row)
 
+        vendor_details = []
+        for link in item.part.vendorpart_set.all():
+            vendor_details.append({
+                "vendor": link.vendor.name if link.vendor else "-",
+                "manufacturer": link.manufacturer.name if link.manufacturer else "-",
+                "website": link.vendor.website if link.vendor and link.vendor.website else "",
+                "phone": link.vendor.phone if link.vendor and link.vendor.phone else "",
+            })
+
+        row_details.append({
+            "part": item.part.name,
+            "model": item.part.model_number,
+            "machine": item.machine.name,
+            "machine_location": item.machine.location,
+            "department": item.machine.department.name,
+            "building": item.machine.department.building.name,
+            "quantity": item.quantity_left,
+            "location": item.placement_location,
+            "description": item.part.description,
+            "compatibility_notes": item.compatibility_notes,
+            "image_url": item.part.image.url if item.part.image else "",
+            "vendors": vendor_details,
+        })
+
     context = {
         "table_columns": table_columns,
         "data_rows": data_rows,
+        "row_details": row_details,
         "departments": Department.objects.all(),
         "selected_department": None,
         "search_query": query
