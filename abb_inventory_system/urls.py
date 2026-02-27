@@ -36,6 +36,9 @@ urlpatterns = [
 
     # MAIN INVENTORY PAGE (handles search + department filter)
     path('inventory/', views.inventory_view, name='inventory'),
-]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+]
+
+if settings.DEBUG and settings.MEDIA_URL and settings.MEDIA_ROOT:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 
