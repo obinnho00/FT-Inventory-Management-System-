@@ -1,8 +1,10 @@
+from email.mime import image
+
 from django.shortcuts import render, redirect
 from django.http import HttpResponse
 from django.contrib import messages
 from django.db.models import Q
-from .models import Department, UserRequirement, Machine, MachinePart
+from .models import Department, UserRequirement, Machine, MachinePart, VendorPart, Part
 
 
 
@@ -56,6 +58,42 @@ def handle_requirement_submission(request):
             return redirect('home')
 
     return HttpResponse("Invalid request method.", status=405)
+
+
+def upload_part_image_popup(request):
+    if request.method != "POST":
+        return HttpResponse("Invalid request method.", status=405)
+
+    model_number = request.POST.get("model_number", "").strip()
+    selected_model = request.POST.get("part_model", "").strip()
+    image_file = request.FILES.get("part_image")
+
+    target_model = selected_model or model_number
+
+    if not target_model:
+        messages.error(request, "Please choose an existing part first.")
+        return redirect("inventory")
+
+    if not image_file:
+        messages.error(request, "Please select an image file to upload.")
+        return redirect("inventory")
+
+    try:
+        part = Part.objects.get(model_number=target_model)
+    except Part.DoesNotExist:
+        messages.error(request, "Selected part was not found.")
+        return redirect("inventory")
+
+    replacing_existing = bool(part.image)
+    part.image = image_file
+    part.save(update_fields=["image"])
+
+    if replacing_existing:
+        messages.success(request, f"Image replaced for {part.name} ({part.model_number}).")
+    else:
+        messages.success(request, f"Image added for {part.name} ({part.model_number}).")
+
+    return redirect("inventory")
 
 
 from django.shortcuts import render
@@ -331,3 +369,26 @@ def inventory_search(request):
     }
 
     return render(request, "dashboard.html", context)
+
+
+# path of config page to add image  to a machine part
+def add_image_config(request):
+    if request.method == "POST":
+        part_id = request.POST.get("part_id")
+        image_file = request.FILES.get("image_file")
+
+        # now check to make sure this image is not in the db and is valid
+        if image_file:
+            try:
+                part = Part.objects.get(id=part_id)
+                part.image = image_file
+                part.save(update_fields=["image"])
+                messages.success(request, "Image uploaded successfully!")
+            except Part.DoesNotExist:
+                messages.error(request, "Part not found.")
+        else:
+            messages.error(request, "No image file provided.")
+
+        return redirect("inventory")
+
+    return render(request, "add_image.html")

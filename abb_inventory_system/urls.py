@@ -31,6 +31,7 @@ urlpatterns = [
     path('', views.Home, name='home'),
 
     path('submit-requirement/', views.handle_requirement_submission, name='submit_requirement'),
+    path('inventory/upload-part-image/', views.upload_part_image_popup, name='upload_part_image_popup'),
     path("inventory/search/", views.inventory_search, name="inventory_search"),
 
     # MAIN INVENTORY PAGE (handles search + department filter)

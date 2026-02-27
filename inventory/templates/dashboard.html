@@ -279,6 +279,74 @@
         text-decoration: underline;
     }
 
+    .image-edit-card {
+        margin-top: 16px;
+        padding: 14px;
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 6px;
+        background: #0f1d2d;
+    }
+
+    .image-edit-title {
+        margin: 0 0 10px;
+        font-size: 15px;
+        font-weight: 600;
+        color: #ffffff;
+    }
+
+    .image-edit-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+
+    .image-edit-field label {
+        display: block;
+        margin-bottom: 5px;
+        color: #cbd5e1;
+        font-size: 13px;
+    }
+
+    .image-edit-field select,
+    .image-edit-field input[type="file"] {
+        width: 100%;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid rgba(255,255,255,0.25);
+        background: #1E293B;
+        color: white;
+        font-size: 13px;
+    }
+
+    .image-edit-status {
+        margin-top: 10px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .image-status-new {
+        color: #86efac;
+    }
+
+    .image-status-replace {
+        color: #fbbf24;
+    }
+
+    .image-edit-actions {
+        margin-top: 10px;
+    }
+
+    .image-edit-btn {
+        background: #2563eb;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 8px 14px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
     /* DataTables Top & Bottom Info Text White */
 
 .dataTables_wrapper .dataTables_filter label,
@@ -450,12 +518,117 @@
             <strong>Vendors:</strong>
             <div id="modalVendors"></div>
         </div>
+
+        <div class="image-edit-card">
+            <h4 class="image-edit-title">Add / Replace Image for Existing Part</h4>
+
+            <form id="popupImageForm" method="post" action="{% url 'upload_part_image_popup' %}" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="upload_part_image_popup">
+                <input type="hidden" name="model_number" id="popupModelNumberField">
+
+                <div class="image-edit-grid">
+                    <div class="image-edit-field">
+                        <label for="popupPartSelect">Choose Existing Part</label>
+                        <select id="popupPartSelect" name="part_model" required></select>
+                    </div>
+
+                    <div class="image-edit-field">
+                        <label for="popupPartImageFile">Select Image</label>
+                        <input id="popupPartImageFile" name="part_image" type="file" accept="image/*" required>
+                    </div>
+                </div>
+
+                <div id="popupImageStatus" class="image-edit-status"></div>
+
+                <div class="image-edit-actions">
+                    <button type="submit" class="image-edit-btn">Save Part Image</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 
 <script>
+let popupPartMap = {};
+let currentModalPartData = null;
+
+function buildPopupPartOptions(rowDetails) {
+    popupPartMap = {};
+    const select = document.getElementById("popupPartSelect");
+    if (!select) {
+        return;
+    }
+
+    select.innerHTML = "";
+
+    const unique = {};
+    (rowDetails || []).forEach((item) => {
+        const model = (item && item.model) ? String(item.model).trim() : "";
+        if (!model || unique[model]) {
+            return;
+        }
+        unique[model] = true;
+        popupPartMap[model] = {
+            part: item.part || "-",
+            model: model,
+            image_url: item.image_url || ""
+        };
+    });
+
+    Object.keys(popupPartMap).sort().forEach((model) => {
+        const option = document.createElement("option");
+        const item = popupPartMap[model];
+        option.value = model;
+        option.textContent = `${item.part} (${model})`;
+        select.appendChild(option);
+    });
+}
+
+function updatePopupImageStatus() {
+    const select = document.getElementById("popupPartSelect");
+    const status = document.getElementById("popupImageStatus");
+    const modelField = document.getElementById("popupModelNumberField");
+
+    if (!select || !status || !modelField) {
+        return;
+    }
+
+    const model = select.value || "";
+    modelField.value = model;
+    const item = popupPartMap[model];
+
+    if (!item) {
+        status.className = "image-edit-status";
+        status.textContent = "Select a part to continue.";
+        return;
+    }
+
+    if (item.image_url) {
+        status.className = "image-edit-status image-status-replace";
+        status.textContent = "This part already has an image. Uploading will replace the existing image.";
+    } else {
+        status.className = "image-edit-status image-status-new";
+        status.textContent = "This part has no image yet. Upload will add a new image.";
+    }
+}
+
+function preselectPopupPart() {
+    const select = document.getElementById("popupPartSelect");
+    if (!select) {
+        return;
+    }
+
+    if (currentModalPartData && currentModalPartData.model && popupPartMap[currentModalPartData.model]) {
+        select.value = currentModalPartData.model;
+    }
+
+    updatePopupImageStatus();
+}
+
 function openModal(details) {
     const data = details || {};
+    currentModalPartData = data;
 
     document.getElementById("modalPart").innerText = data.part || "-";
     document.getElementById("modalModel").innerText = data.model || "-";
@@ -519,6 +692,8 @@ function openModal(details) {
 
         vendorsContainer.appendChild(list);
     }
+
+    preselectPopupPart();
     
     document.getElementById("popup").style.display = "flex";
 }
@@ -545,6 +720,39 @@ document.getElementById("popup").addEventListener("click", function(e) {
 <script>
 $(document).ready(function() {
     const rowDetails = JSON.parse(document.getElementById("rowDetailsData").textContent || "[]");
+    buildPopupPartOptions(rowDetails);
+    preselectPopupPart();
+
+    $(document).on('change', '#popupPartSelect', function() {
+        updatePopupImageStatus();
+    });
+
+    $(document).on('submit', '#popupImageForm', function(event) {
+        const status = document.getElementById("popupImageStatus");
+        const select = document.getElementById("popupPartSelect");
+        const fileInput = document.getElementById("popupPartImageFile");
+
+        if (!status || !select || !fileInput) {
+            return;
+        }
+
+        if (!select.value) {
+            event.preventDefault();
+            status.className = "image-edit-status image-status-replace";
+            status.textContent = "Please select an existing part.";
+            return;
+        }
+
+        if (!fileInput.files || !fileInput.files.length) {
+            event.preventDefault();
+            status.className = "image-edit-status image-status-replace";
+            status.textContent = "Please choose an image file before saving.";
+            return;
+        }
+
+        status.className = "image-edit-status image-status-new";
+        status.textContent = "Uploading image...";
+    });
 
     if ($.fn.DataTable.isDataTable('#inventoryTable')) {
         $('#inventoryTable').DataTable().destroy();
