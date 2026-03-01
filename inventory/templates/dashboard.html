@@ -97,6 +97,10 @@
         background: #1E293B;
         padding: 16px 24px;
         border-bottom: 1px solid rgba(255,255,255,0.1);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
     }
     
     .content-header h3 {
@@ -104,6 +108,26 @@
         font-size: 20px;
         font-weight: 600;
         color: white;
+    }
+
+    .sidebar-toggle-btn {
+        border: 1px solid rgba(255,255,255,0.2);
+        background: #0f1d2d;
+        color: #e2e8f0;
+        border-radius: 6px;
+        padding: 7px 10px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .sidebar-toggle-btn:hover {
+        background: #152438;
+    }
+
+    .dashboard-container.sidebar-collapsed .department-sidebar {
+        display: none;
     }
     
     .table-wrapper {
@@ -410,6 +434,7 @@
     <div class="inventory-content">
         <div class="content-header">
             <h3>IMS</h3>
+            <button id="sidebarToggleBtn" type="button" class="sidebar-toggle-btn">Hide Departments</button>
         </div>
         
         <div class="table-wrapper">
@@ -725,6 +750,8 @@ document.getElementById("popup").addEventListener("click", function(e) {
 
 <script>
 $(document).ready(function() {
+    const dashboardContainer = document.querySelector('.dashboard-container');
+    const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
     const rowDetails = JSON.parse(document.getElementById("rowDetailsData").textContent || "[]");
     buildPopupPartOptions(rowDetails);
     preselectPopupPart();
@@ -766,6 +793,33 @@ $(document).ready(function() {
             }
         }
     });
+
+    function updateSidebarToggleLabel() {
+        if (!dashboardContainer || !sidebarToggleBtn) {
+            return;
+        }
+        const collapsed = dashboardContainer.classList.contains('sidebar-collapsed');
+        sidebarToggleBtn.textContent = collapsed ? 'Show Departments' : 'Hide Departments';
+    }
+
+    if (dashboardContainer && sidebarToggleBtn) {
+        const saved = localStorage.getItem('inventorySidebarCollapsed');
+        if (saved === '1') {
+            dashboardContainer.classList.add('sidebar-collapsed');
+        }
+        updateSidebarToggleLabel();
+
+        sidebarToggleBtn.addEventListener('click', function() {
+            dashboardContainer.classList.toggle('sidebar-collapsed');
+            const collapsed = dashboardContainer.classList.contains('sidebar-collapsed');
+            localStorage.setItem('inventorySidebarCollapsed', collapsed ? '1' : '0');
+            updateSidebarToggleLabel();
+
+            setTimeout(function() {
+                table.columns.adjust().draw(false);
+            }, 120);
+        });
+    }
 
     const headerIndex = {};
     $('#inventoryTable thead th').each(function(index) {
