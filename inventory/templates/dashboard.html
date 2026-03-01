@@ -498,6 +498,11 @@
             <strong>Quantity:</strong>
             <span id="modalQty"></span>
         </div>
+
+        <div class="modal-detail">
+            <strong>Qty Used:</strong>
+            <span id="modalLastUsedQty"></span>
+        </div>
         
         <div class="modal-detail">
             <strong>Placement Point:</strong>
@@ -522,7 +527,7 @@
         <div class="image-edit-card">
             <h4 class="image-edit-title">Add / Replace Image for Existing Part</h4>
 
-            <form id="popupImageForm" method="post" action="{% url 'upload_part_image_popup' %}" enctype="multipart/form-data">
+            <form id="popupImageForm" method="post" enctype="multipart/form-data">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="upload_part_image_popup">
                 <input type="hidden" name="model_number" id="popupModelNumberField">
@@ -636,6 +641,7 @@ function openModal(details) {
     document.getElementById("modalMachine").innerText = data.machine || "-";
     document.getElementById("modalMachineLocation").innerText = data.machine_location || "-";
     document.getElementById("modalQty").innerText = data.quantity ?? "-";
+    document.getElementById("modalLastUsedQty").innerText = data.last_used_quantity ?? "-";
     document.getElementById("modalLocation").innerText = data.location || "Not specified";
     document.getElementById("modalDepartment").innerText = data.department || "-";
     document.getElementById("modalBuilding").innerText = data.building || "-";
@@ -728,30 +734,13 @@ $(document).ready(function() {
     });
 
     $(document).on('submit', '#popupImageForm', function(event) {
+        event.preventDefault();
         const status = document.getElementById("popupImageStatus");
-        const select = document.getElementById("popupPartSelect");
-        const fileInput = document.getElementById("popupPartImageFile");
-
-        if (!status || !select || !fileInput) {
+        if (!status) {
             return;
         }
-
-        if (!select.value) {
-            event.preventDefault();
-            status.className = "image-edit-status image-status-replace";
-            status.textContent = "Please select an existing part.";
-            return;
-        }
-
-        if (!fileInput.files || !fileInput.files.length) {
-            event.preventDefault();
-            status.className = "image-edit-status image-status-replace";
-            status.textContent = "Please choose an image file before saving.";
-            return;
-        }
-
         status.className = "image-edit-status image-status-new";
-        status.textContent = "Uploading image...";
+        status.textContent = "Frontend ready. Connect this form to your backend upload endpoint.";
     });
 
     if ($.fn.DataTable.isDataTable('#inventoryTable')) {

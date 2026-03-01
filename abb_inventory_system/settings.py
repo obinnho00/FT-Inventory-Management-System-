@@ -49,6 +49,11 @@ if not DEBUG:
 
     # If you're behind a proxy/load balancer (Render, Nginx, Cloud Run, etc.)
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Manager secret used to grant/revoke individual department access from login page.
+# Set this in environment for production.
+INVENTORY_MANAGER_GRANT_CODE = os.environ.get("INVENTORY_MANAGER_GRANT_CODE", "ABB-MANAGER")
+
 # Application definition
 
 INSTALLED_APPS = [

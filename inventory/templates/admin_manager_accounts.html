@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Manager Setup | ABB Inventory System{% endblock %}
+
+{% block extra_css %}
+<style>
+    body { background-color: #1E293B; }
+    .wrap { width: 100%; max-width: 1080px; margin: 24px auto; padding: 0 18px 28px; color: #e2e8f0; }
+    .head { text-align: center; margin-bottom: 14px; }
+    .head h2 { margin: 0 0 4px; color: #fff; font-size: 22px; font-weight: 500; }
+    .head p { margin: 0; color: #cbd5e1; font-size: 13px; }
+    .msg-list { margin: 0 auto 14px; padding: 0; list-style: none; max-width: 760px; }
+    .msg-list li { padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 13px; }
+    .msg-list li.success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); }
+    .msg-list li.error { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5); }
+    .panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 980px; margin: 0 auto; }
+    .panel { background: rgba(30,41,59,0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 16px; }
+    .panel h3 { margin: 0 0 12px; color: #fff; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.12); font-size: 18px; font-weight: 500; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; margin-bottom: 6px; color: #cbd5e1; font-size: 13px; }
+    .field input,
+    .field select {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 11px;
+        border-radius: 7px;
+        border: 1px solid rgba(255,255,255,0.22);
+        background: #0f1d2d;
+        color: #fff;
+        font-size: 14px;
+    }
+    .field input:focus,
+    .field select:focus {
+        outline: none;
+        border-color: rgba(52,152,219,0.9);
+    }
+    .field select {
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        padding-right: 34px;
+        background-image: linear-gradient(45deg, transparent 50%, #93c5fd 50%), linear-gradient(135deg, #93c5fd 50%, transparent 50%);
+        background-position: calc(100% - 18px) calc(50% - 2px), calc(100% - 12px) calc(50% - 2px);
+        background-size: 6px 6px, 6px 6px;
+        background-repeat: no-repeat;
+    }
+    .field select option {
+        background: #0f1d2d;
+        color: #e2e8f0;
+    }
+    .btn { border: none; border-radius: 7px; padding: 9px 14px; font-weight: 500; font-size: 14px; cursor: pointer; background: #3498db; color: #fff; }
+    .btn-danger { background: #dc3545; }
+    .dept-picker { border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; background: #0f1d2d; padding: 10px; max-height: 170px; overflow-y: auto; }
+    .dept-option { display: flex; align-items: center; gap: 8px; padding: 6px 2px; font-size: 13px; color: #e2e8f0; cursor: pointer; }
+    .dept-option input[type="checkbox"] { width: 15px; height: 15px; accent-color: #3498db; }
+    .selected-list { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .selected-pill { display: inline-flex; align-items: center; gap: 6px; background: rgba(52,152,219,0.18); border: 1px solid rgba(52,152,219,0.5); color: #dbeafe; border-radius: 999px; padding: 4px 8px; font-size: 12px; }
+    .selected-pill button { border: none; background: transparent; color: #dbeafe; cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
+    .hint { margin-top: 6px; color: #94a3b8; font-size: 12px; }
+    .table-panel { margin-top: 18px; background: rgba(30,41,59,0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 16px; overflow-x: auto; max-width: 1080px; margin-left: auto; margin-right: auto; }
+    .auth-table { width: 100%; border-collapse: collapse; }
+    .auth-table th, .auth-table td { border: 1px solid rgba(255,255,255,0.12); padding: 9px; text-align: left; font-size: 13px; }
+    .auth-table th { background: #0f1d2d; color: #fff; font-weight: 500; }
+    .links { margin-top: 10px; }
+    .links a { color: #93c5fd; text-decoration: none; font-size: 13px; }
+    .links a:hover { text-decoration: underline; }
+    @media (max-width: 980px) { .panel-grid { grid-template-columns: 1fr; max-width: 100%; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wrap">
+    <div class="head">
+        <h2>Admin Manager Setup</h2>
+        <p>Create manager accounts and assign their departments.</p>
+    </div>
+
+    {% if messages %}
+    <ul class="msg-list">
+        {% for message in messages %}
+            <li class="{{ message.tags|default:'info' }}">{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if not admin_unlocked %}
+    <div class="panel-grid" style="max-width:760px; grid-template-columns:1fr;">
+        <section class="panel">
+            <h3>Admin Unlock</h3>
+            <form method="post" action="{% url 'manager_admin' %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="admin_unlock">
+                <div class="field">
+                    <label for="admin_code">Admin Setup Code</label>
+                    <input id="admin_code" name="admin_code" type="password" required>
+                    <div class="hint">Only allowed admin can unlock</div>
+                </div>
+                <button class="btn" type="submit">Unlock</button>
+            </form>
+            <div class="links"><a href="{% url 'manager_login' %}">Go to Manager Login</a></div>
+        </section>
+    </div>
+    {% else %}
+    <div class="panel-grid">
+        <section class="panel">
+            <h3>Create Manager Account</h3>
+            <form method="post" action="{% url 'manager_admin' %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="manager_create_account">
+
+                <div class="field">
+                    <label for="create_first_name">First Name</label>
+                    <input id="create_first_name" name="first_name" type="text" required>
+                </div>
+
+                <div class="field">
+                    <label for="create_last_name">Last Name</label>
+                    <input id="create_last_name" name="last_name" type="text" required>
+                </div>
+
+                <div class="field">
+                    <label for="create_email">Manager Email</label>
+                    <input id="create_email" name="email" type="email" required>
+                </div>
+
+                <div class="field">
+                    <label for="create_access_code">Create Manager Access Code</label>
+                    <input id="create_access_code" name="access_code" type="password" minlength="6" required>
+                </div>
+
+                <div class="field">
+                    <label>Departments In Charge</label>
+                    <div class="dept-picker" id="createDeptPicker">
+                        {% for department in all_departments %}
+                            <label class="dept-option">
+                                <input type="checkbox" name="department_ids" value="{{ department.id }}" data-dept-label="{{ department.name }} ({{ department.building.name }})">
+                                <span>{{ department.name }} ({{ department.building.name }})</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div class="selected-list" id="createSelectedDepartments"></div>
+                    <div class="hint">Click departments to select. Click × to unselect.</div>
+                </div>
+
+                <button class="btn" type="submit">Create Manager</button>
+            </form>
+
+            <form method="post" action="{% url 'manager_admin' %}" style="margin-top:12px;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="admin_logout">
+                <button class="btn btn-danger" type="submit">Admin Sign Out</button>
+            </form>
+        </section>
+
+        <section class="panel">
+            <h3>Update Manager Rights</h3>
+            <form method="post" action="{% url 'manager_admin' %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="admin_update_manager_access">
+
+                <div class="field">
+                    <label for="manager_id">Manager Account</label>
+                    <select id="manager_id" name="manager_id" required>
+                        <option value="">Select manager</option>
+                        {% for manager in manager_accounts %}
+                            <option
+                                value="{{ manager.id }}"
+                                data-departments="{% for department in manager.departments.all %}{{ department.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
+                            >
+                                {{ manager.first_name }} {{ manager.last_name }} ({{ manager.email }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>Departments This Manager Can Control</label>
+                    <div class="dept-picker" id="updateDeptPicker">
+                        {% for department in all_departments %}
+                            <label class="dept-option">
+                                <input type="checkbox" name="update_department_ids" value="{{ department.id }}" data-dept-label="{{ department.name }} ({{ department.building.name }})">
+                                <span>{{ department.name }} ({{ department.building.name }})</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div class="selected-list" id="updateSelectedDepartments"></div>
+                    <div class="hint">Uncheck a department to remove this manager's access to it.</div>
+                </div>
+
+                <button class="btn" type="submit">Save Manager Rights</button>
+            </form>
+
+            <div class="links"><a href="{% url 'manager_login' %}">Go to Manager Login</a></div>
+            <div class="links"><a href="{% url 'manager_access' %}">Go to Manager Access Panel</a></div>
+        </section>
+    </div>
+
+    <section class="table-panel">
+        <h3>Manager Accounts</h3>
+        <table class="auth-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Departments</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for manager in manager_accounts %}
+                    <tr>
+                        <td>{{ manager.first_name }} {{ manager.last_name }}</td>
+                        <td>{{ manager.email }}</td>
+                        <td>
+                            {% for department in manager.departments.all %}
+                                {{ department.name }}{% if not forloop.last %}, {% endif %}
+                            {% empty %}
+                                -
+                            {% endfor %}
+                        </td>
+                        <td>{% if manager.is_active %}Active{% else %}Inactive{% endif %}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4">No manager accounts created yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function bindDepartmentPicker(pickerId, selectedListId, checkboxName) {
+    const picker = document.getElementById(pickerId);
+    const selectedList = document.getElementById(selectedListId);
+    if (!picker || !selectedList) return;
+
+    const checkboxes = picker.querySelectorAll(`input[type="checkbox"][name="${checkboxName}"]`);
+
+    function renderSelected() {
+        selectedList.innerHTML = "";
+        const selected = Array.from(checkboxes).filter((box) => box.checked);
+        selected.forEach((box) => {
+            const label = box.getAttribute("data-dept-label") || box.value;
+            const pill = document.createElement("span");
+            pill.className = "selected-pill";
+            pill.textContent = label;
+            const removeButton = document.createElement("button");
+            removeButton.type = "button";
+            removeButton.textContent = "×";
+            removeButton.addEventListener("click", () => {
+                box.checked = false;
+                renderSelected();
+            });
+            pill.appendChild(removeButton);
+            selectedList.appendChild(pill);
+        });
+    }
+
+    checkboxes.forEach((box) => box.addEventListener("change", renderSelected));
+    renderSelected();
+}
+
+function syncManagerRightsSelection() {
+    const managerSelect = document.getElementById("manager_id");
+    const updatePicker = document.getElementById("updateDeptPicker");
+    if (!managerSelect || !updatePicker) {
+        return;
+    }
+
+    const selectedOption = managerSelect.options[managerSelect.selectedIndex];
+    const allBoxes = updatePicker.querySelectorAll('input[type="checkbox"][name="update_department_ids"]');
+    allBoxes.forEach((box) => {
+        box.checked = false;
+    });
+
+    if (!selectedOption || !selectedOption.value) {
+        return;
+    }
+
+    const departmentCsv = selectedOption.getAttribute("data-departments") || "";
+    const selectedIds = departmentCsv ? departmentCsv.split(",") : [];
+    selectedIds.forEach((departmentId) => {
+        const checkbox = updatePicker.querySelector(`input[type="checkbox"][name="update_department_ids"][value="${departmentId}"]`);
+        if (checkbox) {
+            checkbox.checked = true;
+        }
+    });
+
+    const event = new Event("change");
+    const firstBox = updatePicker.querySelector('input[type="checkbox"][name="update_department_ids"]');
+    if (firstBox) {
+        firstBox.dispatchEvent(event);
+    }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    bindDepartmentPicker("createDeptPicker", "createSelectedDepartments", "department_ids");
+    bindDepartmentPicker("updateDeptPicker", "updateSelectedDepartments", "update_department_ids");
+
+    const managerSelect = document.getElementById("manager_id");
+    if (managerSelect) {
+        managerSelect.addEventListener("change", syncManagerRightsSelection);
+    }
+    syncManagerRightsSelection();
+});
+</script>
+{% endblock %}

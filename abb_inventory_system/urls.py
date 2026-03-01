@@ -15,9 +15,16 @@ urlpatterns = [
 
     path('', views.Home, name='home'),
 
+    path('inventory/login/', views.inventory_login_view, name='inventory_login'),
+    path('inventory/logout/', views.inventory_logout_view, name='inventory_logout'),
+    path('inventory/manager-login/', views.manager_login_view, name='manager_login'),
+    path('inventory/admin-manager/', views.admin_manager_accounts_view, name='manager_admin'),
+    path('inventory/manager-access/', views.grant_access_view, name='manager_access'),
+
     path('submit-requirement/', views.handle_requirement_submission, name='submit_requirement'),
 
     path('inventory/upload-part-image/', views.upload_part_image_popup, name='upload_part_image_popup'),
+    path('inventory/manage/', views.inventory_manage_view, name='inventory_manage'),
 
     path("inventory/search/", views.inventory_search, name="inventory_search"),
 

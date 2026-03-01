@@ -1,0 +1,535 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Inventory | ABB Inventory System{% endblock %}
+
+{% block extra_css %}
+<style>
+	body {
+		background-color: #1E293B;
+	}
+
+	.manage-wrap {
+		width: 100%;
+		max-width: none;
+		margin: 0;
+		padding: 16px 24px 24px;
+		color: #e2e8f0;
+	}
+
+	.manage-header h2 {
+		margin: 0;
+		color: #ffffff;
+	}
+
+	.manage-header p {
+		margin: 6px 0 16px;
+		color: #cbd5e1;
+	}
+
+	.msg-list {
+		margin: 0 0 14px;
+		padding: 0;
+		list-style: none;
+	}
+
+	.msg-list li {
+		padding: 10px 12px;
+		border-radius: 6px;
+		margin-bottom: 8px;
+		font-size: 14px;
+	}
+
+	.msg-list li.success {
+		background: rgba(34, 197, 94, 0.2);
+		border: 1px solid rgba(34, 197, 94, 0.5);
+	}
+
+	.msg-list li.error {
+		background: rgba(239, 68, 68, 0.2);
+		border: 1px solid rgba(239, 68, 68, 0.5);
+	}
+
+	.two-col {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 16px;
+	}
+
+	.panel {
+		background: #1E293B;
+		border: 1px solid rgba(255,255,255,0.1);
+		border-radius: 10px;
+		padding: 16px;
+	}
+
+	.panel h3 {
+		margin: 0 0 12px;
+		color: #fff;
+		padding-bottom: 8px;
+		border-bottom: 1px solid rgba(255,255,255,0.1);
+	}
+
+	.field {
+		margin-bottom: 12px;
+	}
+
+	.field label {
+		display: block;
+		margin-bottom: 6px;
+		color: #cbd5e1;
+		font-size: 14px;
+	}
+
+	.field input,
+	.field select,
+	.field textarea {
+		width: 100%;
+		box-sizing: border-box;
+		padding: 10px;
+		border-radius: 6px;
+		border: 1px solid rgba(255,255,255,0.2);
+		background: #0f1d2d;
+		color: #fff;
+	}
+
+	.field input::placeholder,
+	.field textarea::placeholder {
+		color: #94a3b8;
+	}
+
+	.field textarea {
+		min-height: 88px;
+		resize: vertical;
+	}
+
+	.btn {
+		border: none;
+		border-radius: 6px;
+		padding: 10px 14px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.btn-primary {
+		background: #3498db;
+		color: #fff;
+	}
+
+	.btn-warning {
+		background: #dc3545;
+		color: #fff;
+	}
+
+	.btn-primary:hover {
+		background: #2563eb;
+	}
+
+	.btn-warning:hover {
+		background: #c82333;
+	}
+
+	.hidden {
+		display: none;
+	}
+
+	.mode-switch {
+		display: flex;
+		gap: 14px;
+		margin-bottom: 12px;
+	}
+
+	.mode-switch label {
+		color: #cbd5e1;
+		font-size: 14px;
+		cursor: pointer;
+	}
+
+	.snapshot-filters {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+		margin-bottom: 12px;
+	}
+
+	.table-panel {
+		margin-top: 16px;
+		background: #1E293B;
+		border: 1px solid rgba(255,255,255,0.1);
+		border-radius: 10px;
+		padding: 16px;
+		overflow-x: auto;
+	}
+
+	.inv-table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+
+	.inv-table th,
+	.inv-table td {
+		border: 1px solid rgba(255,255,255,0.12);
+		padding: 8px;
+		text-align: left;
+		font-size: 13px;
+	}
+
+	.inv-table th {
+		background: #0f1d2d;
+		color: #ffffff;
+	}
+
+	.inv-table tbody td {
+		background: #1E293B;
+		color: #ffffff;
+	}
+
+	@media (max-width: 980px) {
+		.two-col {
+			grid-template-columns: 1fr;
+		}
+
+		.snapshot-filters {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="manage-wrap">
+	
+	{% if messages %}
+	<ul class="msg-list">
+		{% for message in messages %}
+			<li class="{{ message.tags|default:'info' }}">{{ message }}</li>
+		{% endfor %}
+	</ul>
+	{% endif %}
+
+	<div class="two-col">
+		<section class="panel">
+			<h3>Update Inventory</h3>
+			<form method="post" action="{% url 'inventory_manage' %}">
+				{% csrf_token %}
+				<input type="hidden" name="action" value="add_inventory">
+
+				<div class="field">
+					<label for="add_department_id">Department</label>
+					<select id="add_department_id" name="department_id" required>
+						<option value="">Select department</option>
+						{% for department in departments %}
+							<option value="{{ department.id }}">{{ department.name }} ({{ department.building.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+
+				<div class="field">
+					<label for="add_machine_id">Machine</label>
+					<select id="add_machine_id" name="machine_id" required>
+						<option value="">Select machine</option>
+						{% for machine in machines %}
+							<option value="{{ machine.id }}" data-department="{{ machine.department_id }}">{{ machine.name }} ({{ machine.department.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+
+				<div class="field">
+					<label>Part Mode</label>
+					<div class="mode-switch">
+						<label><input type="radio" name="part_mode" value="existing" checked> Update Existing Part</label>
+						<label><input type="radio" name="part_mode" value="new"> Add New Part</label>
+					</div>
+				</div>
+
+				<div id="existingPartFields" class="field">
+					<label for="part_id">Existing Part</label>
+					<select id="part_id" name="part_id">
+						<option value="">Select part</option>
+						{% for part in parts %}
+							<option value="{{ part.id }}">{{ part.name }} ({{ part.model_number }})</option>
+						{% endfor %}
+					</select>
+				</div>
+
+				<div id="newPartFields" class="hidden">
+					<div class="field">
+						<label for="new_part_name">New Part Name</label>
+						<input id="new_part_name" name="new_part_name" type="text">
+					</div>
+					<div class="field">
+						<label for="new_model_number">New Model Number</label>
+						<input id="new_model_number" name="new_model_number" type="text">
+					</div>
+					<div class="field">
+						<label for="new_description">New Part Description (optional)</label>
+						<textarea id="new_description" name="new_description"></textarea>
+					</div>
+				</div>
+
+				<div class="field">
+					<label for="add_quantity">Quantity to Add</label>
+					<input id="add_quantity" name="add_quantity" type="number" min="1" required>
+				</div>
+
+				<div class="field">
+					<label for="placement_location">Placement Location (optional)</label>
+					<input id="placement_location" name="placement_location" type="text" placeholder="Example: Robot arm J2">
+				</div>
+
+				<div class="field">
+					<label for="usage_notes">Usage / Compatibility Notes (optional)</label>
+					<textarea id="usage_notes" name="usage_notes"></textarea>
+				</div>
+
+				<button class="btn btn-primary" type="submit">Add Stock</button>
+			</form>
+		</section>
+
+		<section class="panel">
+			<h3>Update Used</h3>
+			<form method="post" action="{% url 'inventory_manage' %}">
+				{% csrf_token %}
+				<input type="hidden" name="action" value="use_inventory">
+
+				<div class="field">
+					<label for="use_department_id">Department</label>
+					<select id="use_department_id" name="department_id" required>
+						<option value="">Select department</option>
+						{% for department in departments %}
+							<option value="{{ department.id }}">{{ department.name }} ({{ department.building.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+
+				<div class="field">
+					<label for="use_machine_id">Machine</label>
+					<select id="use_machine_id" name="machine_id" required>
+						<option value="">Select machine</option>
+						{% for machine in machines %}
+							<option value="{{ machine.id }}" data-department="{{ machine.department_id }}">{{ machine.name }} ({{ machine.department.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+
+				<div class="field">
+					<label for="machine_part_id">Inventory Item (Machine + Part)</label>
+					<select id="machine_part_id" name="machine_part_id" required>
+						<option value="">Select inventory item</option>
+						{% for link in machine_parts %}
+							<option value="{{ link.id }}" data-machine="{{ link.machine_id }}" data-department="{{ link.machine.department_id }}">{{ link.machine.name }} | {{ link.part.name }} ({{ link.part.model_number }}) | Available: {{ link.quantity_left }}</option>
+						{% endfor %}
+					</select>
+				</div>
+
+				<div class="field">
+					<label for="used_quantity">Quantity Used</label>
+					<input id="used_quantity" name="used_quantity" type="number" min="1" required>
+				</div>
+
+				<button class="btn btn-warning" type="submit">Use Stock</button>
+			</form>
+		</section>
+	</div>
+
+	<section class="table-panel">
+		<h3>Current Inventory</h3>
+		<div class="snapshot-filters">
+			<div class="field">
+				<label for="snapshot_department_filter">Department</label>
+				<select id="snapshot_department_filter">
+					<option value="">All departments</option>
+					{% for department in departments %}
+						<option value="{{ department.id }}">{{ department.name }} ({{ department.building.name }})</option>
+					{% endfor %}
+				</select>
+			</div>
+			<div class="field">
+				<label for="snapshot_machine_filter">Snapshot Machine Filter</label>
+				<select id="snapshot_machine_filter">
+					<option value="">All machines</option>
+					{% for machine in machines %}
+						<option value="{{ machine.id }}" data-department="{{ machine.department_id }}">{{ machine.name }} ({{ machine.department.name }})</option>
+					{% endfor %}
+				</select>
+			</div>
+		</div>
+		<table class="inv-table">
+			<thead>
+				<tr>
+					<th>Machine</th>
+					<th>Department</th>
+					<th>Part</th>
+					<th>Model</th>
+					<th>Quantity Left</th>
+					<th>Placement</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for link in machine_parts %}
+				<tr data-department="{{ link.machine.department_id }}" data-machine="{{ link.machine_id }}">
+					<td>{{ link.machine.name }}</td>
+					<td>{{ link.machine.department.name }}</td>
+					<td>{{ link.part.name }}</td>
+					<td>{{ link.part.model_number }}</td>
+					<td>{{ link.quantity_left }}</td>
+					<td>{{ link.placement_location|default:'-' }}</td>
+				</tr>
+				{% empty %}
+				<tr>
+					<td colspan="6">No inventory links found.</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+	function filterMachinesByDepartment(departmentSelectId, machineSelectId) {
+		const departmentSelect = document.getElementById(departmentSelectId);
+		const machineSelect = document.getElementById(machineSelectId);
+		if (!departmentSelect || !machineSelect) {
+			return;
+		}
+
+		const selectedDepartment = departmentSelect.value;
+		Array.from(machineSelect.options).forEach((option) => {
+			if (!option.value) {
+				option.hidden = false;
+				return;
+			}
+
+			const matches = !selectedDepartment || option.dataset.department === selectedDepartment;
+			option.hidden = !matches;
+		});
+
+		if (machineSelect.value && machineSelect.options[machineSelect.selectedIndex] && machineSelect.options[machineSelect.selectedIndex].hidden) {
+			machineSelect.value = "";
+		}
+	}
+
+	function filterInventoryItems() {
+		const departmentSelect = document.getElementById("use_department_id");
+		const machineSelect = document.getElementById("use_machine_id");
+		const inventorySelect = document.getElementById("machine_part_id");
+
+		if (!departmentSelect || !machineSelect || !inventorySelect) {
+			return;
+		}
+
+		const departmentId = departmentSelect.value;
+		const machineId = machineSelect.value;
+
+		Array.from(inventorySelect.options).forEach((option) => {
+			if (!option.value) {
+				option.hidden = false;
+				return;
+			}
+
+			const matchesDepartment = !departmentId || option.dataset.department === departmentId;
+			const matchesMachine = !machineId || option.dataset.machine === machineId;
+			option.hidden = !(matchesDepartment && matchesMachine);
+		});
+
+		if (inventorySelect.value && inventorySelect.options[inventorySelect.selectedIndex] && inventorySelect.options[inventorySelect.selectedIndex].hidden) {
+			inventorySelect.value = "";
+		}
+	}
+
+	function filterSnapshotRows() {
+		const departmentFilter = document.getElementById("snapshot_department_filter");
+		const machineFilter = document.getElementById("snapshot_machine_filter");
+		const tableRows = document.querySelectorAll(".inv-table tbody tr[data-department][data-machine]");
+
+		if (!departmentFilter || !machineFilter) {
+			return;
+		}
+
+		const departmentId = departmentFilter.value;
+		const machineId = machineFilter.value;
+
+		tableRows.forEach((row) => {
+			const matchesDepartment = !departmentId || row.dataset.department === departmentId;
+			const matchesMachine = !machineId || row.dataset.machine === machineId;
+			row.style.display = matchesDepartment && matchesMachine ? "" : "none";
+		});
+	}
+
+	function togglePartMode() {
+		const selectedMode = document.querySelector("input[name='part_mode']:checked")?.value || "existing";
+		const existingPartFields = document.getElementById("existingPartFields");
+		const newPartFields = document.getElementById("newPartFields");
+		const existingPartSelect = document.getElementById("part_id");
+		const newPartName = document.getElementById("new_part_name");
+		const newModelNumber = document.getElementById("new_model_number");
+
+		if (!existingPartFields || !newPartFields || !existingPartSelect || !newPartName || !newModelNumber) {
+			return;
+		}
+
+		if (selectedMode === "new") {
+			existingPartFields.classList.add("hidden");
+			newPartFields.classList.remove("hidden");
+			existingPartSelect.required = false;
+			newPartName.required = true;
+			newModelNumber.required = true;
+		} else {
+			existingPartFields.classList.remove("hidden");
+			newPartFields.classList.add("hidden");
+			existingPartSelect.required = true;
+			newPartName.required = false;
+			newModelNumber.required = false;
+		}
+	}
+
+	document.addEventListener("DOMContentLoaded", function() {
+		filterMachinesByDepartment("add_department_id", "add_machine_id");
+		filterMachinesByDepartment("use_department_id", "use_machine_id");
+		filterMachinesByDepartment("snapshot_department_filter", "snapshot_machine_filter");
+		filterInventoryItems();
+		filterSnapshotRows();
+		togglePartMode();
+
+		document.getElementById("add_department_id")?.addEventListener("change", function() {
+			filterMachinesByDepartment("add_department_id", "add_machine_id");
+			document.getElementById("snapshot_department_filter").value = this.value;
+			filterMachinesByDepartment("snapshot_department_filter", "snapshot_machine_filter");
+			filterSnapshotRows();
+		});
+
+		document.getElementById("add_machine_id")?.addEventListener("change", function() {
+			document.getElementById("snapshot_machine_filter").value = this.value;
+			filterSnapshotRows();
+		});
+
+		document.getElementById("use_department_id")?.addEventListener("change", function() {
+			filterMachinesByDepartment("use_department_id", "use_machine_id");
+			filterInventoryItems();
+			document.getElementById("snapshot_department_filter").value = this.value;
+			filterMachinesByDepartment("snapshot_department_filter", "snapshot_machine_filter");
+			filterSnapshotRows();
+		});
+
+		document.getElementById("use_machine_id")?.addEventListener("change", function() {
+			filterInventoryItems();
+			document.getElementById("snapshot_machine_filter").value = this.value;
+			filterSnapshotRows();
+		});
+
+		document.getElementById("snapshot_department_filter")?.addEventListener("change", function() {
+			filterMachinesByDepartment("snapshot_department_filter", "snapshot_machine_filter");
+			filterSnapshotRows();
+		});
+
+		document.getElementById("snapshot_machine_filter")?.addEventListener("change", function() {
+			filterSnapshotRows();
+		});
+
+		document.querySelectorAll("input[name='part_mode']").forEach((radio) => {
+			radio.addEventListener("change", togglePartMode);
+		});
+	});
+</script>
+{% endblock %}

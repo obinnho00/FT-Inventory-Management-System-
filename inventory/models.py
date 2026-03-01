@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils import timezone
+from django.contrib.auth.hashers import make_password, check_password
 
 
 # ==========================================
@@ -7,6 +8,8 @@ from django.utils import timezone
 # ==========================================
 
 class Building(models.Model):
+    """Table for physical buildings where departments and machines exist."""
+
     name = models.CharField(max_length=100, unique=True)
 
     class Meta:
@@ -18,6 +21,8 @@ class Building(models.Model):
 
 
 class Department(models.Model):
+    """Table for functional departments (linked to one building)."""
+
     name = models.CharField(max_length=100, unique=True)
 
     building = models.ForeignKey(
@@ -34,11 +39,108 @@ class Department(models.Model):
         return self.name
 
 
+class DepartmentAccessCode(models.Model):
+    """Table for department-specific login/access codes used on inventory operations."""
+
+    department = models.OneToOneField(
+        Department,
+        on_delete=models.CASCADE,
+        related_name="access_code"
+    )
+
+    code = models.CharField(max_length=50)
+
+    class Meta:
+        db_table = "inventory_department_access_code"
+
+    def __str__(self):
+        return f"{self.department.name} Access Code"
+
+
+class DepartmentAuthorizedUser(models.Model):
+    """Individuals granted inventory access by manager for a specific department."""
+
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.CASCADE,
+        related_name="authorized_users"
+    )
+
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    email = models.EmailField(max_length=254)
+    is_active = models.BooleanField(default=True)
+    granted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "inventory_department_authorized_user"
+        unique_together = ("department", "email")
+        ordering = ["department__name", "first_name", "last_name", "email"]
+
+    def __str__(self):
+        status = "Active" if self.is_active else "Inactive"
+        return f"{self.first_name} {self.last_name} <{self.email}> - {self.department.name} ({status})"
+
+
+class ManagerAccount(models.Model):
+    """Manager account that controls one or more departments."""
+
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    email = models.EmailField(max_length=254, unique=True)
+    access_code_hash = models.CharField(max_length=128)
+    departments = models.ManyToManyField(
+        Department,
+        related_name="manager_accounts",
+        blank=True,
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "inventory_manager_account"
+        ordering = ["first_name", "last_name", "email"]
+
+    def set_access_code(self, raw_code):
+        self.access_code_hash = make_password(raw_code)
+
+    def check_access_code(self, raw_code):
+        return check_password(raw_code, self.access_code_hash)
+
+    def __str__(self):
+        status = "Active" if self.is_active else "Inactive"
+        return f"{self.first_name} {self.last_name} <{self.email}> ({status})"
+
+
+class AdminSetupKey(models.Model):
+    """Database-backed key used to unlock the admin manager-setup page."""
+
+    key_hash = models.CharField(max_length=128)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "inventory_admin_setup_key"
+        ordering = ["-updated_at"]
+
+    def set_key(self, raw_key):
+        self.key_hash = make_password(raw_key)
+
+    def check_key(self, raw_key):
+        return check_password(raw_key, self.key_hash)
+
+    def __str__(self):
+        status = "Active" if self.is_active else "Inactive"
+        return f"Admin Setup Key ({status})"
+
+
 # ==========================================
 # MACHINE STRUCTURE
 # ==========================================
 
 class Machine(models.Model):
+    """Table for machines/robots that consume parts and belong to a department."""
 
     STATUS_CHOICES = [
         ("Running", "Running"),
@@ -89,6 +191,8 @@ class Machine(models.Model):
 # ==========================================
 
 class Part(models.Model):
+    """Master table for parts/spares identified by a unique model number."""
+
     model_number = models.CharField(
         max_length=100,
         unique=True,
@@ -121,6 +225,11 @@ class Part(models.Model):
 # ==========================================
 
 class MachinePart(models.Model):
+    """
+    Inventory junction table between Machine and Part.
+
+    Stores live quantity, placement, usage notes, and last user action tracking.
+    """
 
     machine = models.ForeignKey(
         Machine,
@@ -141,6 +250,19 @@ class MachinePart(models.Model):
 
     compatibility_notes = models.TextField(blank=True)
 
+    # Tracks the last person who changed this inventory row (use/replace action).
+    last_action_by_first_name = models.CharField(max_length=100, blank=True)
+    last_action_by_last_name = models.CharField(max_length=100, blank=True)
+
+    # Stores what the last operation was (for example: USED, REPLACED).
+    last_action_type = models.CharField(max_length=30, blank=True)
+
+    # Stores how many units were used in the latest USED action.
+    last_used_quantity = models.PositiveIntegerField(null=True, blank=True)
+
+    # Timestamp for the most recent inventory action on this machine-part row.
+    last_action_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         db_table = "inventory_machine_part"
         unique_together = ("machine", "part")
@@ -154,6 +276,7 @@ class MachinePart(models.Model):
 # ==========================================
 
 class MaintenanceRecord(models.Model):
+    """Table for maintenance incidents and optional consumed/replaced parts."""
 
     machine = models.ForeignKey(
         Machine,
@@ -190,6 +313,8 @@ class MaintenanceRecord(models.Model):
 # ==========================================
 
 class Vendor(models.Model):
+    """Vendor/supplier master table (contact and website info)."""
+
     name = models.CharField(max_length=120, unique=True)
     phone = models.CharField(max_length=30, blank=True)
     website = models.URLField(blank=True)
@@ -203,6 +328,8 @@ class Vendor(models.Model):
 
 
 class Manufacturer(models.Model):
+    """Manufacturer master table used by vendor-part mappings."""
+
     name = models.CharField(max_length=120, unique=True)
     phone = models.CharField(max_length=30, blank=True)
 
@@ -215,6 +342,7 @@ class Manufacturer(models.Model):
 
 
 class VendorPart(models.Model):
+    """Mapping table for which vendors supply which part models."""
 
     part = models.ForeignKey(Part, on_delete=models.CASCADE)
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
@@ -241,6 +369,8 @@ class VendorPart(models.Model):
 # ==========================================
 
 class UserRequirement(models.Model):
+    """Table for user-submitted requirements/requests by department."""
+
     department = models.ForeignKey(
         Department,
         on_delete=models.CASCADE
@@ -259,6 +389,8 @@ class UserRequirement(models.Model):
 
 
 class UserEmail(models.Model):
+    """Table of unique email addresses used for reminder notifications."""
+
     email = models.EmailField(unique=True)
 
     class Meta:
