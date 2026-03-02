@@ -13,7 +13,7 @@ from django.views.static import serve
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    path('', views.Home, name='home'),
+    path('home/', views.Home, name='home'),
 
     path('inventory/login/', views.inventory_login_view, name='inventory_login'),
     path('inventory/logout/', views.inventory_logout_view, name='inventory_logout'),
@@ -29,7 +29,7 @@ urlpatterns = [
     path("inventory/search/", views.inventory_search, name="inventory_search"),
 
     # MAIN INVENTORY PAGE
-    path('inventory/', views.inventory_view, name='inventory'),
+    path('', views.inventory_view, name='inventory'),
 ]
 
 

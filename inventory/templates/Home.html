@@ -5,20 +5,21 @@
 
 {% block content %}
 
-{% if messages %}
-    {% for message in messages %}
-        {% if message.tags == 'success' %}
-            <script>
-                window.addEventListener('DOMContentLoaded', function() {
-                    alert("{{ message|escapejs }}");
-                });
-            </script>
-        {% endif %}
-    {% endfor %}
-{% endif %}
-
 <div class="requirement-wrapper">
     <div class="requirement-card">
+        {% if messages %}
+            <div id="flashMessages" class="flash-messages" role="status" aria-live="polite">
+                {% for message in messages %}
+                    <div class="flash-message {% if message.tags == 'success' %}flash-success{% else %}flash-error{% endif %}">
+                        <div class="flash-content">
+                            <div class="flash-title">{% if message.tags == 'success' %}Submission successful{% else %}Please review{% endif %}</div>
+                            <div class="flash-text">{{ message }}</div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
         <div class="requirement-header">
         
         <h2>Department Specific System User & Software Requirements</h2>
@@ -52,7 +53,6 @@
                     {% for department in departments %}
                         <option value="{{ department.id }}">{{ department.name }}</option>
                     {% endfor %}
-                    <option value="other">Other</option>
                 </select>
             </div>
 
@@ -69,4 +69,22 @@
     </div>
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const flash = document.getElementById('flashMessages');
+    if (!flash) {
+        return;
+    }
+
+    setTimeout(function () {
+        flash.classList.add('flash-messages-hide');
+        setTimeout(function () {
+            flash.remove();
+        }, 400);
+    }, 2500);
+});
+</script>
 {% endblock %}

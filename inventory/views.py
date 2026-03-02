@@ -1,5 +1,4 @@
 from django.shortcuts import render, redirect
-from django.http import HttpResponse
 from django.contrib import messages
 from django.db.models import Q
 from django.utils import timezone
@@ -126,6 +125,9 @@ def Home(request):
 
 
 def handle_requirement_submission(request):
+    if request.method == 'GET':
+        return redirect('home')
+
     if request.method == 'POST':
         name = request.POST.get('name')
         department_id = request.POST.get('department')
@@ -147,12 +149,14 @@ def handle_requirement_submission(request):
             messages.error(request, 'Invalid department selected.')
             return redirect('home')
 
-    return HttpResponse("Invalid request method.", status=405)
+    messages.error(request, 'Request method is not supported for this action.')
+    return redirect('home')
 
 
 def upload_part_image_popup(request):
     if request.method != "POST":
-        return HttpResponse("Invalid request method.", status=405)
+        messages.error(request, "Request method is not supported for this action.")
+        return redirect("inventory")
 
     model_number = request.POST.get("model_number", "").strip()
     selected_model = request.POST.get("part_model", "").strip()
