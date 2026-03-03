@@ -36,11 +36,34 @@
         <!-- Navigation -->
         <nav class="nav-container" id="nav-container">
             <ul class="nav-links">
+
+                {% if inventory_user %}
+                
                 <li><a href="{% url 'submit_requirement' %}">Ticket</a></li>
-                <li><a href="{% url 'manager_login' %}">Manager</a></li>
+                <li><a href="{% url 'inventory_manage' %}">Manage Inventory</a></li>
+                <li><a href="{% url 'inventory_logout' %}">Logout</a></li>
+                <li>
+                    <a href="#" onclick="return false;">
+                        User: {{ inventory_user.first_name }} {{ inventory_user.last_name }}
+                    </a>
+                </li>
+                {% elif manager_account %}
+                <li><a href="{% url 'submit_requirement' %}">Ticket</a></li>
+                <li><a href="{% url 'manager_access' %}">Manager Access</a></li>
+                <li>
+                    <a href="#" onclick="return false;">
+                        Manager: {{ manager_account.first_name }} {{ manager_account.last_name }}
+                    </a>
+                </li>
+                {% else %}
                 <li><a href="{% url 'inventory_login' %}">Login</a></li>
-                <li><a href="#"></a></li>
-                <li><a href="#"></a></li>
+                {% endif %}
+
+                {% if request.user.is_superuser %}
+                {% url 'manager_admin' %}
+                <li><a href="{% url 'manager_admin' %}">Admin: Create Manager Account</a></li>
+                <li><a href="{% url 'manager_admin' %}">Logout</a></li>
+                {% endif %}
             </ul>
         </nav>
     </div>
@@ -74,6 +97,25 @@
 document.getElementById("menu-toggle").addEventListener("click", function() {
     document.getElementById("nav-container").classList.toggle("active");
 });
+
+(function preserveScrollAfterActions() {
+    const storageKey = "abb_scroll_pos:" + window.location.pathname + window.location.search;
+
+    const savedPosition = sessionStorage.getItem(storageKey);
+    if (savedPosition !== null) {
+        const scrollY = parseInt(savedPosition, 10);
+        if (!Number.isNaN(scrollY)) {
+            window.scrollTo(0, scrollY);
+        }
+        sessionStorage.removeItem(storageKey);
+    }
+
+    document.querySelectorAll("form").forEach((form) => {
+        form.addEventListener("submit", () => {
+            sessionStorage.setItem(storageKey, String(window.scrollY || 0));
+        });
+    });
+})();
 </script>
 
 {% block extra_js %}{% endblock %}

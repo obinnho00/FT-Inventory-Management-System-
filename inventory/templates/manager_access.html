@@ -358,10 +358,7 @@
         </section>
     </div>
     {% else %}
-    <div class="manager-summary">
-        Logged in as {{ manager_account.first_name }} {{ manager_account.last_name }} ({{ manager_account.email }}).
-        You can manage only your assigned departments.
-    </div>
+    
 
     <div class="panel-grid">
         <section class="panel">
@@ -412,7 +409,7 @@
     </div>
 
     <section class="table-panel">
-        <h3>Authorized Individuals</h3>
+        <h3>Team Members</h3>
         <table class="auth-table">
             <thead>
                 <tr>
@@ -449,6 +446,12 @@
                                 <input type="hidden" name="authorized_user_id" value="{{ row.id }}">
                                 <button class="btn btn-sm" type="submit" name="access_action" value="grant">Grant</button>
                                 <button class="btn btn-sm btn-secondary" type="submit" name="access_action" value="deny">Deny</button>
+                            </form>
+                            <form method="post" action="{% url 'manager_access' %}" class="row-action" style="margin-top: 6px;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="remove_existing_user">
+                                <input type="hidden" name="authorized_user_id" value="{{ row.id }}">
+                                <button class="btn btn-sm btn-danger" type="submit">Remove</button>
                             </form>
                         </td>
                     </tr>

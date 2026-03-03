@@ -5,6 +5,16 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from .models import Department, UserRequirement, Machine, MachinePart, VendorPart, Part, DepartmentAuthorizedUser, ManagerAccount, AdminSetupKey
+from functools import wraps
+
+def require_any_login(view_func):
+    @wraps(view_func)
+    def _wrapped(request, *args, **kwargs):
+        if request.session.get("inventory_user") or request.session.get("inventory_manager_account_id"):
+            return view_func(request, *args, **kwargs)
+        messages.error(request, "Please login first.")
+        return redirect("inventory_login")
+    return _wrapped
 
 
 def _safe_part_image_url(part):
@@ -17,12 +27,28 @@ def _safe_part_image_url(part):
         return ""
     return ""
 
-
 def _get_inventory_session_user(request):
     # This helper reads the logged-in inventory user from session.
     # We store first name, last name, and department to tie every stock action to a person.
     return request.session.get("inventory_user")
 
+def _build_shared_template_context(request):
+    inventory_user = _get_inventory_session_user(request)
+    department_names = (inventory_user or {}).get("department_names") or []
+    manager_account = _get_manager_session_account(request)
+
+    return {
+        "inventory_user": inventory_user,
+        "inventory_user_departments_text": ", ".join(department_names),
+        "manager_account": manager_account,
+        "admin_unlocked": bool(request.session.get("inventory_admin_manager_setup_unlocked", False)),
+    }
+
+def _render_template(request, template_name, context=None):
+    shared_context = _build_shared_template_context(request)
+    if context:
+        shared_context.update(context)
+    return render(request, template_name, shared_context)
 
 def _set_machine_part_last_action(machine_part, request, action_type, action_quantity=None):
     # This helper stamps WHO performed the latest inventory action.
@@ -36,7 +62,6 @@ def _set_machine_part_last_action(machine_part, request, action_type, action_qua
     machine_part.last_action_by_last_name = user.get("last_name", "")
     machine_part.last_action_type = action_type
     machine_part.last_action_at = timezone.now()
-
 
 def inventory_login_view(request):
     # Login page for inventory operations.
@@ -85,8 +110,7 @@ def inventory_login_view(request):
         messages.success(request, f"Logged in as {first_name} {last_name}. Authorized by email: {email}.")
         return redirect("inventory_manage")
 
-    return render(request, "login.html")
-
+    return _render_template(request, "login.html")
 
 def inventory_logout_view(request):
     # Remove inventory session identity.
@@ -94,7 +118,6 @@ def inventory_logout_view(request):
     request.session.pop("inventory_user", None)
     messages.success(request, "You have been logged out from inventory access.")
     return redirect("inventory_login")
-
 
 
 
@@ -121,8 +144,7 @@ def Home(request):
         'search_results': search_results,
         'search_query': search_query,
     }
-    return render(request, 'Home.html', context)
-
+    return _render_template(request, 'Home.html', context)
 
 def handle_requirement_submission(request):
     if request.method == 'GET':
@@ -151,7 +173,6 @@ def handle_requirement_submission(request):
 
     messages.error(request, 'Request method is not supported for this action.')
     return redirect('home')
-
 
 def upload_part_image_popup(request):
     if request.method != "POST":
@@ -190,13 +211,8 @@ def upload_part_image_popup(request):
     return redirect("inventory")
 
 
-from django.shortcuts import render
-from django.db.models import Prefetch
-from .models import (
-    Department,
-    MachinePart,
-    VendorPart
-)
+
+
 
 
 # this is the main inventory view that shows the inventory table with dynamic columns and filters, and also allows clicking into each row to see more details about the part, machine, and vendors. It also supports department filtering on top.
@@ -383,12 +399,13 @@ def inventory_view(request):
         "row_details": row_details,
     }
 
-    return render(request, "dashboard.html", context)
+    return _render_template(request, "dashboard.html", context)
 
 
 
 # this function handle the seach filed which accept the seach by part name, model number or vendor name. it will return the result in the same table format as the main inventory page, but only show the matched results based on the search query. it also supports partial match and case-insensitive search for better usability.
 # the search results page will also show the same dynamic columns and details view as the main inventory page, so you can click into each row to see more information about the part, machine, and vendors. this allows users to quickly find specific parts or machines in the inventory by searching with keywords, and then drill down into the details from the search results.
+
 def inventory_search(request):
     query = request.GET.get("q", "").strip()
 
@@ -481,12 +498,13 @@ def inventory_search(request):
         "search_query": query
     }
 
-    return render(request, "dashboard.html", context)
+    return _render_template(request, "dashboard.html", context)
 
 
 # this is the Update inventory page where you can add new inventory or use existing inventory. the left side of the page is for adding new inventory, where you can select the department, machine, and part (or create a new part on the fly), and specify the quantity, location, and usage notes. when you submit the form, it will update the inventory quantity for that machine-part combination, and also record who made the change and when for audit tracking.
 # this function allows acces to the inventory management page where users can add new inventory or record used inventory. The left side of the page is for adding inventory, where users can select the department, machine, and part (or create a new part), and specify quantity, location, and usage notes. When submitted, it updates the inventory quantity for that machine-part combination and records who made the change and when for audit tracking. The right side of the page is for recording used inventory, where users can select the department, machine, and specific inventory item, and specify how many units were used. This will auto-reduce the quantity in the database and also track who used the inventory and when. This page ensures that all inventory changes are tied to a named user for accountability.
 
+@require_any_login
 def inventory_manage_view(request):
     # Enforce login: inventory add/use actions must be tied to a named person.
     user = _get_inventory_session_user(request)
@@ -596,9 +614,9 @@ def inventory_manage_view(request):
 
             machine_part.save()
 
-            # Record who last replaced/updated this inventory item.
-            
-            _set_machine_part_last_action(machine_part, request, "REPLACED", quantity_value)
+            # Record the last inventory action with accurate action labels.
+            add_action_type = "ADDED" if created else "INCREASED"
+            _set_machine_part_last_action(machine_part, request, add_action_type, quantity_value)
             machine_part.save(update_fields=[
                 "quantity_left",
                 "placement_location",
@@ -611,9 +629,15 @@ def inventory_manage_view(request):
             ])
 
             if created:
-                messages.success(request, f"Inventory link created and {quantity_value} units added.")
+                messages.success(
+                    request,
+                    f"Inventory record created. Added {quantity_value} units. Current quantity: {machine_part.quantity_left}.",
+                )
             else:
-                messages.success(request, f"Added {quantity_value} units. New quantity: {machine_part.quantity_left}.")
+                messages.success(
+                    request,
+                    f"Inventory quantity increased by {quantity_value} units. Current quantity: {machine_part.quantity_left}.",
+                )
 
             return redirect("inventory_manage")
 
@@ -697,8 +721,7 @@ def inventory_manage_view(request):
         "inventory_user": user,
     }
 
-    return render(request, "addpart.html", context)
-
+    return _render_template(request, "addpart.html", context)
 
 
 
@@ -707,7 +730,6 @@ def _get_manager_session_account(request):
     if not manager_account_id:
         return None
     return ManagerAccount.objects.filter(id=manager_account_id, is_active=True).first()
-
 
 def manager_login_view(request):
     if request.method == "POST":
@@ -727,7 +749,8 @@ def manager_login_view(request):
         messages.success(request, "Manager access unlocked.")
         return redirect("manager_access")
 
-    return render(request, "manager_login.html")
+    return _render_template(request, "manager_login.html")
+
 
 
 def admin_manager_accounts_view(request):
@@ -835,6 +858,29 @@ def admin_manager_accounts_view(request):
             messages.success(request, f"Updated manager {manager.first_name} {manager.last_name}: Departments: {department_text}.")
             return redirect("manager_admin")
 
+        if action == "admin_delete_manager":
+            manager_id = request.POST.get("manager_id", "").strip()
+
+            if not manager_id:
+                messages.error(request, "Select a manager account to delete.")
+                return redirect("manager_admin")
+
+            try:
+                manager = ManagerAccount.objects.get(id=manager_id)
+            except ManagerAccount.DoesNotExist:
+                messages.error(request, "Selected manager account was not found.")
+                return redirect("manager_admin")
+
+            deleted_name = f"{manager.first_name} {manager.last_name}"
+            deleted_email = manager.email
+            manager.delete()
+
+            if request.session.get("inventory_manager_account_id") == int(manager_id):
+                request.session.pop("inventory_manager_account_id", None)
+
+            messages.success(request, f"Manager account deleted: {deleted_name} ({deleted_email}).")
+            return redirect("manager_admin")
+
         messages.error(request, "Invalid admin action.")
         return redirect("manager_admin")
 
@@ -846,9 +892,10 @@ def admin_manager_accounts_view(request):
         "all_departments": all_departments,
         "manager_accounts": manager_accounts,
     }
-    return render(request, "admin_manager_accounts.html", context)
+    return _render_template(request, "admin_manager_accounts.html", context)
 
 
+@require_any_login
 def grant_access_view(request):
     manager_account = _get_manager_session_account(request)
     if not manager_account:
@@ -960,6 +1007,35 @@ def grant_access_view(request):
             )
             return redirect("manager_access")
 
+        if action == "remove_existing_user":
+            authorized_user_id = request.POST.get("authorized_user_id", "").strip()
+
+            if not authorized_user_id:
+                messages.error(request, "Select an existing user to remove.")
+                return redirect("manager_access")
+
+            try:
+                authorized_user = DepartmentAuthorizedUser.objects.select_related("department").get(id=authorized_user_id)
+            except DepartmentAuthorizedUser.DoesNotExist:
+                messages.error(request, "Selected authorized user was not found.")
+                return redirect("manager_access")
+
+            manager_department_ids = set(manager_account.departments.values_list("id", flat=True))
+            if authorized_user.department_id not in manager_department_ids:
+                messages.error(request, "You can only remove users in your assigned departments.")
+                return redirect("manager_access")
+
+            deleted_name = f"{authorized_user.first_name} {authorized_user.last_name}"
+            deleted_email = authorized_user.email
+            deleted_department = authorized_user.department.name
+            authorized_user.delete()
+
+            messages.success(
+                request,
+                f"Removed team member {deleted_name} ({deleted_email}) from {deleted_department}.",
+            )
+            return redirect("manager_access")
+
         messages.error(request, "Invalid manager action.")
         return redirect("manager_access")
 
@@ -977,6 +1053,34 @@ def grant_access_view(request):
         "manager_account": manager_account,
         "authorized_users": authorized_users,
     }
-    return render(request, "manager_access.html", context)
+    return _render_template(request, "manager_access.html", context)
 
 
+
+# this function is used to provide the inventory user context for templates. it checks the session for the logged-in inventory user and manager account, and returns their information along with any relevant department names and admin access status. this allows the base template to display the appropriate navigation links and user information based on whether an inventory user or manager is logged in, and whether admin setup is unlocked.
+
+def inventory_user_context(request):
+    inventory_user = request.session.get("inventory_user")
+    manager_account = None
+    manager_account_id = request.session.get("inventory_manager_account_id")
+    if manager_account_id:
+        manager_account = ManagerAccount.objects.filter(id=manager_account_id, is_active=True).first()
+    admin_unlocked = bool(request.session.get("inventory_admin_manager_setup_unlocked", False))
+
+    if not inventory_user:
+        return {
+            "inventory_user": None,
+            "inventory_user_departments_text": "",
+            "manager_account": manager_account,
+            "admin_unlocked": admin_unlocked,
+        }
+
+    department_names = inventory_user.get("department_names") or []
+    departments_text = ", ".join(department_names)
+
+    return {
+        "inventory_user": inventory_user,
+        "inventory_user_departments_text": departments_text,
+        "manager_account": manager_account,
+        "admin_unlocked": admin_unlocked,
+    }

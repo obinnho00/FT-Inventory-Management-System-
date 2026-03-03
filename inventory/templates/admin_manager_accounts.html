@@ -5,7 +5,7 @@
 {% block extra_css %}
 <style>
     body { background-color: #1E293B; }
-    .wrap { width: 100%; max-width: 1080px; margin: 24px auto; padding: 0 18px 28px; color: #e2e8f0; }
+    .wrap { width: 100%; max-width: 1600px; margin: 24px auto; padding: 0 18px 28px; color: #e2e8f0; }
     .head { text-align: center; margin-bottom: 14px; }
     .head h2 { margin: 0 0 4px; color: #fff; font-size: 22px; font-weight: 500; }
     .head p { margin: 0; color: #cbd5e1; font-size: 13px; }
@@ -13,7 +13,7 @@
     .msg-list li { padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 13px; }
     .msg-list li.success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); }
     .msg-list li.error { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5); }
-    .panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 980px; margin: 0 auto; }
+    .panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 1520px; margin: 0 auto; }
     .panel { background: rgba(30,41,59,0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 16px; }
     .panel h3 { margin: 0 0 12px; color: #fff; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.12); font-size: 18px; font-weight: 500; }
     .field { margin-bottom: 12px; }
@@ -57,13 +57,15 @@
     .selected-pill { display: inline-flex; align-items: center; gap: 6px; background: rgba(52,152,219,0.18); border: 1px solid rgba(52,152,219,0.5); color: #dbeafe; border-radius: 999px; padding: 4px 8px; font-size: 12px; }
     .selected-pill button { border: none; background: transparent; color: #dbeafe; cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
     .hint { margin-top: 6px; color: #94a3b8; font-size: 12px; }
-    .table-panel { margin-top: 18px; background: rgba(30,41,59,0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 16px; overflow-x: auto; max-width: 1080px; margin-left: auto; margin-right: auto; }
+    .table-panel { margin-top: 18px; background: rgba(30,41,59,0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 16px; overflow-x: auto; max-width: 1600px; margin-left: auto; margin-right: auto; }
     .auth-table { width: 100%; border-collapse: collapse; }
     .auth-table th, .auth-table td { border: 1px solid rgba(255,255,255,0.12); padding: 9px; text-align: left; font-size: 13px; }
     .auth-table th { background: #0f1d2d; color: #fff; font-weight: 500; }
     .links { margin-top: 10px; }
     .links a { color: #93c5fd; text-decoration: none; font-size: 13px; }
     .links a:hover { text-decoration: underline; }
+    .action-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .action-row form { margin: 0; }
     @media (max-width: 980px) { .panel-grid { grid-template-columns: 1fr; max-width: 100%; } }
 </style>
 {% endblock %}
@@ -71,8 +73,8 @@
 {% block content %}
 <div class="wrap">
     <div class="head">
-        <h2>Admin Manager Setup</h2>
-        <p>Create manager accounts and assign their departments.</p>
+        <h2>Admin Config</h2>
+        <p>Create manager account</p>
     </div>
 
     {% if messages %}
@@ -104,7 +106,7 @@
     <div class="panel-grid">
         <section class="panel">
             <h3>Create Manager Account</h3>
-            <form method="post" action="{% url 'manager_admin' %}">
+            <form id="createManagerForm" method="post" action="{% url 'manager_admin' %}">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="manager_create_account">
 
@@ -129,7 +131,7 @@
                 </div>
 
                 <div class="field">
-                    <label>Departments In Charge</label>
+                    <label>Departments</label>
                     <div class="dept-picker" id="createDeptPicker">
                         {% for department in all_departments %}
                             <label class="dept-option">
@@ -141,19 +143,20 @@
                     <div class="selected-list" id="createSelectedDepartments"></div>
                     <div class="hint">Click departments to select. Click × to unselect.</div>
                 </div>
-
-                <button class="btn" type="submit">Create Manager</button>
             </form>
 
-            <form method="post" action="{% url 'manager_admin' %}" style="margin-top:12px;">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="admin_logout">
-                <button class="btn btn-danger" type="submit">Admin Sign Out</button>
-            </form>
+            <div class="action-row">
+                <button class="btn" type="submit" form="createManagerForm">Create Manager</button>
+                <form method="post" action="{% url 'manager_admin' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="admin_logout">
+                    <button class="btn btn-danger" type="submit">Sign Out</button>
+                </form>
+            </div>
         </section>
 
         <section class="panel">
-            <h3>Update Manager Rights</h3>
+            <h3>Update Manager Departments</h3>
             <form method="post" action="{% url 'manager_admin' %}">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="admin_update_manager_access">
@@ -174,7 +177,7 @@
                 </div>
 
                 <div class="field">
-                    <label>Departments This Manager Can Control</label>
+                    <label>Assign departments to Manager</label>
                     <div class="dept-picker" id="updateDeptPicker">
                         {% for department in all_departments %}
                             <label class="dept-option">
@@ -187,16 +190,14 @@
                     <div class="hint">Uncheck a department to remove this manager's access to it.</div>
                 </div>
 
-                <button class="btn" type="submit">Save Manager Rights</button>
+                <button class="btn" type="submit">Assign</button>
             </form>
 
-            <div class="links"><a href="{% url 'manager_login' %}">Go to Manager Login</a></div>
-            <div class="links"><a href="{% url 'manager_access' %}">Go to Manager Access Panel</a></div>
         </section>
     </div>
 
     <section class="table-panel">
-        <h3>Manager Accounts</h3>
+        <h3>Department Managers</h3>
         <table class="auth-table">
             <thead>
                 <tr>
@@ -218,7 +219,15 @@
                                 -
                             {% endfor %}
                         </td>
-                        <td>{% if manager.is_active %}Active{% else %}Inactive{% endif %}</td>
+                        <td>
+                            {% if manager.is_active %}Active{% else %}Inactive{% endif %}
+                            <form method="post" action="{% url 'manager_admin' %}" style="display:inline-block; margin-left:8px;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="admin_delete_manager">
+                                <input type="hidden" name="manager_id" value="{{ manager.id }}">
+                                <button type="submit" class="btn btn-danger">Remove Manager</button>
+                            </form>
+                        </td>
                     </tr>
                 {% empty %}
                     <tr><td colspan="4">No manager accounts created yet.</td></tr>
