@@ -21,6 +21,7 @@
     .coming { background: linear-gradient(135deg, #15803d, #22c55e); border: 1px solid rgba(187,247,208,0.7); }
     .done { background: linear-gradient(135deg, #0891b2, #22d3ee); border: 1px solid rgba(186,230,253,0.7); }
     .cancelled { background: linear-gradient(135deg, #b91c1c, #ef4444); border: 1px solid rgba(254,202,202,0.7); }
+    .pending { background: linear-gradient(135deg, #991b1b, #dc2626); border: 1px solid rgba(254,202,202,0.7); }
     .msg-list { margin: 0 0 12px; padding: 0; list-style: none; }
     .msg-list li { padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
     .msg-list li.success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); }
@@ -77,6 +78,11 @@
         <h2>Work Completed</h2>
         <p>Issue resolved and completion recorded.</p>
     </section>
+    {% elif station_latest_request and station_latest_request.status == 'NEW' %}
+    <section class="screen pending" id="pendingScreen">
+        <h2>REQUEST SENT</h2>
+        <p>Not accepted yet. Waiting for engineering to accept.</p>
+    </section>
     {% elif station_latest_request and station_latest_request.status == 'COMING' %}
     <section class="screen coming" id="comingScreen">
         <h2>COMING</h2>
@@ -90,6 +96,10 @@
     <section class="screen coming" id="comingScreen" style="display:none;">
         <h2>COMING</h2>
         <p>Engineering is on the way to this station.</p>
+    </section>
+    <section class="screen pending" id="pendingScreen" style="display:none;">
+        <h2>REQUEST SENT</h2>
+        <p>Not accepted yet. Waiting for engineering to accept.</p>
     </section>
     <section class="screen cancelled" id="cancelledScreen" style="display:none;">
         <h2>CANCELLED</h2>
@@ -113,14 +123,22 @@
     const nowEl = document.getElementById("scannerNow");
     const doneScreen = document.getElementById("doneScreen");
     const comingScreen = document.getElementById("comingScreen");
+    const pendingScreen = document.getElementById("pendingScreen");
     const cancelledScreen = document.getElementById("cancelledScreen");
     const comingEngineerText = document.getElementById("comingEngineerText");
 
     function updateScreens(status) {
-        if (!doneScreen || !comingScreen || !cancelledScreen) return;
+        if (!doneScreen || !comingScreen || !pendingScreen || !cancelledScreen) return;
+        pendingScreen.style.display = status === "NEW" ? "block" : "none";
         doneScreen.style.display = status === "COMPLETED" ? "block" : "none";
         comingScreen.style.display = status === "COMING" ? "block" : "none";
         cancelledScreen.style.display = status === "CANCELLED" ? "block" : "none";
+
+        if (status === "COMPLETED") {
+            setTimeout(() => {
+                window.location.href = "{% url 'work_station_scanner_expired' %}";
+            }, 1200);
+        }
     }
 
     async function refreshScannerStatus() {

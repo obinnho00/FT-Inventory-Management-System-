@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Scan Again | ABB Inventory System{% endblock %}
+
+{% block extra_css %}
+<style>
+    body { background: #0f172a; }
+    .wrap { max-width: 640px; margin: 28px auto; padding: 0 14px 24px; color: #e2e8f0; }
+    .card { background: rgba(30,41,59,0.95); border: 1px solid rgba(255,255,255,0.16); border-radius: 14px; padding: 24px; text-align: center; }
+    .card h1 { margin: 0 0 10px; color: #fff; font-size: 28px; }
+    .card p { margin: 0; color: #cbd5e1; font-size: 15px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wrap">
+    <section class="card">
+        <h1>Work Completed</h1>
+        <p>This scanner session is closed. Please scan the station QR code again for a new request.</p>
+    </section>
+</div>
+{% endblock %}

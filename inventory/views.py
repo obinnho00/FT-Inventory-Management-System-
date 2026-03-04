@@ -1948,7 +1948,11 @@ def work_station_scan_complete(request):
     if _is_ajax_request(request):
         return JsonResponse({"ok": True, "message": "Work completed recorded."})
 
-    return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1&done=1")
+    return redirect("work_station_scanner_expired")
+
+
+def work_station_scanner_expired(request):
+    return _render_template(request, "scanner_expired.html")
 
 
 
