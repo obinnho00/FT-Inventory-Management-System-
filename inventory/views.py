@@ -20,7 +20,12 @@ from functools import wraps
 def require_any_login(view_func):
     @wraps(view_func)
     def _wrapped(request, *args, **kwargs):
-        if request.session.get("inventory_user") or request.session.get("inventory_manager_account_id"):
+        if (
+            request.session.get("inventory_user")
+            or request.session.get("inventory_manager_account_id")
+            or request.user.is_superuser
+            or request.session.get("inventory_admin_manager_setup_unlocked")
+        ):
             return view_func(request, *args, **kwargs)
         messages.error(request, "Please login first.")
         return redirect("inventory_login")
@@ -1942,36 +1947,51 @@ def work_station_scanner_expired(request):
 # this function is for adding and managingind dp
 @require_any_login
 def manage_department(request):
+    is_admin_mode = bool(request.user.is_superuser or request.session.get("inventory_admin_manager_setup_unlocked", False))
     manager_account = _get_manager_session_account(request)
-    if not manager_account:
+    if not manager_account and not is_admin_mode:
         messages.error(request, "Please login as manager first.")
         return redirect("manager_login")
 
-    manager_department_ids = set(manager_account.departments.values_list("id", flat=True))
+    if is_admin_mode:
+        manager_department_ids = set(Department.objects.values_list("id", flat=True))
+    else:
+        manager_department_ids = set(manager_account.departments.values_list("id", flat=True))
 
     if request.method == "POST":
         action = request.POST.get("action", "").strip()
 
         if action == "add_department":
             building_id = request.POST.get("building_id", "").strip()
+            new_building_name = request.POST.get("new_building_name", "").strip()
             department_name = request.POST.get("department_name", "").strip()
 
-            if not building_id or not department_name:
-                messages.error(request, "Building and department name are required.")
+            if not department_name:
+                messages.error(request, "Department name is required.")
                 return redirect("manage_department")
 
-            try:
-                building = Building.objects.get(id=building_id)
-            except Building.DoesNotExist:
-                messages.error(request, "Selected building was not found.")
+            if not building_id and not new_building_name:
+                messages.error(request, "Select a building or enter a new building name.")
                 return redirect("manage_department")
+
+            if new_building_name:
+                building = Building.objects.filter(name__iexact=new_building_name).first()
+                if not building:
+                    building = Building.objects.create(name=new_building_name)
+            else:
+                try:
+                    building = Building.objects.get(id=building_id)
+                except Building.DoesNotExist:
+                    messages.error(request, "Selected building was not found.")
+                    return redirect("manage_department")
 
             if Department.objects.filter(name__iexact=department_name).exists():
                 messages.error(request, "A department with this name already exists.")
                 return redirect("manage_department")
 
             department = Department.objects.create(name=department_name, building=building)
-            manager_account.departments.add(department)
+            if manager_account:
+                manager_account.departments.add(department)
             messages.success(request, f"Department '{department.name}' added to building '{building.name}'.")
             return redirect("manage_department")
 
@@ -2197,7 +2217,8 @@ def manage_department(request):
 
             deleted_name = delete_department.name
             delete_department.delete()
-            manager_account.departments.remove(delete_department)
+            if manager_account:
+                manager_account.departments.remove(delete_department)
 
             messages.success(
                 request,

@@ -81,12 +81,17 @@
 				</div>
 				<div class="field">
 					<label for="building_id">Building</label>
-					<select id="building_id" name="building_id" required>
+					<select id="building_id" name="building_id">
 						<option value="">Select building</option>
 						{% for building in buildings %}
 							<option value="{{ building.id }}">{{ building.name }}</option>
 						{% endfor %}
 					</select>
+					<div class="hint">Or enter a new building below.</div>
+				</div>
+				<div class="field">
+					<label for="new_building_name">New Building (Optional)</label>
+					<input id="new_building_name" name="new_building_name" type="text" placeholder="e.g. Building C">
 				</div>
 				<button class="btn" type="submit">Add Department</button>
 			</form>
