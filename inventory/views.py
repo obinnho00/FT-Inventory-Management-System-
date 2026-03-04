@@ -12,6 +12,7 @@ import io
 import re
 from PIL import Image
 import qrcode
+from zoneinfo import ZoneInfo
 from .models import Building, Department, UserRequirement, Machine, MachinePart, VendorPart, Part, DepartmentAuthorizedUser, ManagerAccount, AdminSetupKey, Station, WorkOrderRequest
 from functools import wraps
 
@@ -1359,10 +1360,42 @@ def _get_allowed_department_ids(request):
     return allowed_department_ids
 
 
+NC_TIMEZONE = ZoneInfo("America/New_York")
+
+
+def _format_nc_time(value):
+    if not value:
+        return "-"
+    return timezone.localtime(value, NC_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p ET")
+
+
+def _serialize_work_order(item):
+    return {
+        "id": item.id,
+        "priority": item.priority,
+        "priority_label": item.get_priority_display(),
+        "status": item.status,
+        "status_label": item.get_status_display(),
+        "department_name": item.department.name,
+        "location_name": item.department.building.name,
+        "station_name": item.station.name,
+        "station_id": item.station_id,
+        "machine_name": item.machine.name if item.machine else "-",
+        "message": item.message or "-",
+        "scanned_at": _format_nc_time(item.scanned_at),
+        "accepted_at": _format_nc_time(item.accepted_at),
+    }
+
+
+def _is_ajax_request(request):
+    return request.headers.get("x-requested-with") == "XMLHttpRequest"
+
+
 def work_station_view(request):
     station_id = request.GET.get("station_id", "").strip()
     department_id = request.GET.get("department_id", "").strip()
     scan_flag = request.GET.get("scan", "").strip().lower() in {"1", "true", "yes"}
+    completed_flag = request.GET.get("done", "").strip().lower() in {"1", "true", "yes"}
     is_logged_in = bool(request.session.get("inventory_user") or request.session.get("inventory_manager_account_id"))
     is_inventory_user = bool(request.session.get("inventory_user"))
     is_manager_only = bool(request.session.get("inventory_manager_account_id")) and not is_inventory_user
@@ -1371,7 +1404,7 @@ def work_station_view(request):
     selected_department = None
     machine_options = Machine.objects.none()
     station_latest_request = None
-    just_completed = False
+    just_completed = completed_flag
     allowed_department_ids = _get_allowed_department_ids(request) if is_inventory_user else set()
 
     if not is_logged_in and not (scan_flag and station_id):
@@ -1413,27 +1446,7 @@ def work_station_view(request):
                     station=selected_station,
                     status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING],
                 ).order_by("-scanned_at").first()
-                if active_request and active_request.status == WorkOrderRequest.STATUS_COMING:
-                    actor = _get_actor_identity(request)
-                    now = timezone.now()
-                    active_request.status = WorkOrderRequest.STATUS_COMPLETED
-                    active_request.completed_at = now
-                    active_request.completed_by_first_name = actor["first_name"] or "Operator"
-                    active_request.completed_by_last_name = actor["last_name"] or "Scanner"
-                    active_request.completed_by_email = actor["email"]
-                    active_request.save(
-                        update_fields=[
-                            "status",
-                            "completed_at",
-                            "completed_by_first_name",
-                            "completed_by_last_name",
-                            "completed_by_email",
-                        ]
-                    )
-                    station_latest_request = active_request
-                    just_completed = True
-                    messages.success(request, f"Work completed recorded for {selected_station.name}.")
-                elif not active_request:
+                if not active_request:
                     station_latest_request = WorkOrderRequest.objects.create(
                         station=selected_station,
                         department=selected_department,
@@ -1511,9 +1524,70 @@ def work_station_view(request):
         "active_alerts": active_alerts,
         "just_completed": just_completed,
         "is_scanner_view": is_scanner_view,
+        "current_nc_time": timezone.localtime(timezone.now(), NC_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p ET"),
     }
     template_name = "scanner_station.html" if is_scanner_view else "Work_station.html"
     return _render_template(request, template_name, context)
+
+
+def work_station_live_status(request):
+    station_id = request.GET.get("station_id", "").strip()
+    department_id = request.GET.get("department_id", "").strip()
+
+    if station_id:
+        station = Station.objects.select_related("department", "department__building").filter(id=station_id).first()
+        if not station:
+            return JsonResponse({"ok": False, "message": "Station not found."}, status=404)
+
+        latest = (
+            WorkOrderRequest.objects.select_related("department", "station", "machine")
+            .filter(station=station, status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING])
+            .order_by("-scanned_at")
+            .first()
+        )
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "now": timezone.localtime(timezone.now(), NC_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p ET"),
+                "station": {
+                    "id": station.id,
+                    "name": station.name,
+                    "department_name": station.department.name,
+                    "location_name": station.department.building.name,
+                },
+                "latest": _serialize_work_order(latest) if latest else None,
+            }
+        )
+
+    if not request.session.get("inventory_user"):
+        return JsonResponse({"ok": False, "message": "Login required."}, status=403)
+
+    allowed_department_ids = _get_allowed_department_ids(request)
+    if not allowed_department_ids:
+        return JsonResponse({"ok": True, "alerts": [], "work_orders": [], "now": timezone.localtime(timezone.now(), NC_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p ET")})
+
+    work_orders = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(
+        department_id__in=allowed_department_ids
+    )
+    if department_id:
+        work_orders = work_orders.filter(department_id=department_id)
+    work_orders = work_orders.order_by("priority", "-scanned_at")[:120]
+
+    active_alerts = (
+        WorkOrderRequest.objects.select_related("department", "station", "machine")
+        .filter(status=WorkOrderRequest.STATUS_NEW, department_id__in=allowed_department_ids)
+        .order_by("priority", "-scanned_at")[:50]
+    )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "now": timezone.localtime(timezone.now(), NC_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p ET"),
+            "alerts": [_serialize_work_order(item) for item in active_alerts],
+            "work_orders": [_serialize_work_order(item) for item in work_orders],
+        }
+    )
 
 
 @require_any_login
@@ -1598,15 +1672,21 @@ def work_station_accept_request(request):
 
     work_order = WorkOrderRequest.objects.select_related("department").filter(id=work_order_id).first()
     if not work_order:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Work order not found."}, status=404)
         messages.error(request, "Work order not found.")
         return redirect("work_station")
 
     allowed_department_ids = _get_allowed_department_ids(request)
     if work_order.department_id not in allowed_department_ids:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Not allowed."}, status=403)
         messages.error(request, "You are not allowed to access this department request.")
         return redirect("work_station")
 
     if work_order.status != WorkOrderRequest.STATUS_NEW:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Only NEW requests can be accepted."}, status=400)
         messages.info(request, "Only NEW requests can be accepted.")
         if department_id:
             return redirect(f"{reverse('work_station')}?department_id={department_id}")
@@ -1634,12 +1714,74 @@ def work_station_accept_request(request):
         "technician_email",
     ])
 
+    if _is_ajax_request(request):
+        return JsonResponse({"ok": True, "message": "Status set to COMING."})
+
     messages.success(request, f"Work order #{work_order.id} accepted. Status set to COMING.")
     if department_id:
         return redirect(f"{reverse('work_station')}?department_id={department_id}")
     if station_id:
         return redirect(f"{reverse('work_station')}?station_id={station_id}")
     return redirect(f"{reverse('work_station')}?department_id={work_order.department_id}")
+
+
+@require_any_login
+def work_station_complete_request(request):
+    if request.method != "POST":
+        return redirect("work_station")
+
+    if not request.session.get("inventory_user"):
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Login required."}, status=403)
+        messages.error(request, "Only authorized department users can complete workstation requests.")
+        return redirect("inventory_login")
+
+    work_order_id = request.POST.get("work_order_id", "").strip()
+    department_id = request.POST.get("department_id", "").strip()
+
+    work_order = WorkOrderRequest.objects.select_related("department").filter(id=work_order_id).first()
+    if not work_order:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Work order not found."}, status=404)
+        messages.error(request, "Work order not found.")
+        return redirect("work_station")
+
+    allowed_department_ids = _get_allowed_department_ids(request)
+    if work_order.department_id not in allowed_department_ids:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Not allowed."}, status=403)
+        messages.error(request, "You are not allowed to complete this request.")
+        return redirect("work_station")
+
+    if work_order.status != WorkOrderRequest.STATUS_COMING:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Only COMING requests can be completed."}, status=400)
+        messages.info(request, "Only COMING requests can be completed.")
+        return redirect("work_station")
+
+    actor = _get_actor_identity(request)
+    now = timezone.now()
+    work_order.status = WorkOrderRequest.STATUS_COMPLETED
+    work_order.completed_at = now
+    work_order.completed_by_first_name = actor["first_name"]
+    work_order.completed_by_last_name = actor["last_name"]
+    work_order.completed_by_email = actor["email"]
+    work_order.save(
+        update_fields=[
+            "status",
+            "completed_at",
+            "completed_by_first_name",
+            "completed_by_last_name",
+            "completed_by_email",
+        ]
+    )
+
+    if _is_ajax_request(request):
+        return JsonResponse({"ok": True, "message": "Work marked completed."})
+
+    if department_id:
+        return redirect(f"{reverse('work_station')}?department_id={department_id}")
+    return redirect("work_station")
 
 
 @require_any_login
@@ -1679,10 +1821,9 @@ def work_station_cancel_request(request):
         messages.info(request, "No pending NEW call found to cancel.")
         return redirect(f"{reverse('work_station')}?station_id={station_id}")
 
-    work_order.status = WorkOrderRequest.STATUS_CANCELLED
-    work_order.cancelled_at = timezone.now()
-    work_order.save(update_fields=["status", "cancelled_at"])
-    messages.success(request, f"Call cancelled for station {work_order.station.name}.")
+    station_name = work_order.station.name
+    work_order.delete()
+    messages.success(request, f"Call cancelled for station {station_name}. Unaccepted request removed.")
     return redirect(f"{reverse('work_station')}?station_id={station_id}")
 
 
@@ -1705,6 +1846,8 @@ def work_station_scan_call(request):
         status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING],
     ).order_by("-scanned_at").first()
     if existing_active_request:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Call already active for this station."}, status=400)
         messages.info(request, "Call already active for this station.")
         return redirect(f"{reverse('work_station')}?station_id={station.id}&scan=1")
 
@@ -1715,6 +1858,9 @@ def work_station_scan_call(request):
         priority=WorkOrderRequest.PRIORITY_MEDIUM,
         status=WorkOrderRequest.STATUS_NEW,
     )
+
+    if _is_ajax_request(request):
+        return JsonResponse({"ok": True, "message": "Call sent."})
 
     messages.success(request, f"Call sent from {station.name}.")
     return redirect(f"{reverse('work_station')}?station_id={station.id}&scan=1")
@@ -1738,14 +1884,67 @@ def work_station_scan_cancel(request):
         .first()
     )
     if not work_order:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "No pending NEW call found to cancel."}, status=400)
         messages.info(request, "No pending NEW call found to cancel.")
         return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1")
 
-    work_order.status = WorkOrderRequest.STATUS_CANCELLED
-    work_order.cancelled_at = timezone.now()
-    work_order.save(update_fields=["status", "cancelled_at"])
-    messages.success(request, f"Call cancelled for station {work_order.station.name}.")
+    station_name = work_order.station.name
+    work_order.delete()
+
+    if _is_ajax_request(request):
+        return JsonResponse({"ok": True, "message": "Call cancelled.", "state": "CANCELLED"})
+
+    messages.success(request, f"Call cancelled for station {station_name}. Unaccepted request removed.")
     return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1")
+
+
+def work_station_scan_complete(request):
+    if request.method != "POST":
+        return redirect("work_station")
+
+    station_id = request.POST.get("station_id", "").strip()
+    if not station_id:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Station is required."}, status=400)
+        messages.error(request, "Station is required.")
+        return redirect("work_station")
+
+    work_order = (
+        WorkOrderRequest.objects.filter(
+            station_id=station_id,
+            status=WorkOrderRequest.STATUS_COMING,
+        )
+        .order_by("-scanned_at")
+        .first()
+    )
+    if not work_order:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "No COMING request found to complete."}, status=400)
+        messages.info(request, "No COMING request found to complete.")
+        return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1")
+
+    actor = _get_actor_identity(request)
+    now = timezone.now()
+    work_order.status = WorkOrderRequest.STATUS_COMPLETED
+    work_order.completed_at = now
+    work_order.completed_by_first_name = actor["first_name"] or "Operator"
+    work_order.completed_by_last_name = actor["last_name"] or "Scanner"
+    work_order.completed_by_email = actor["email"]
+    work_order.save(
+        update_fields=[
+            "status",
+            "completed_at",
+            "completed_by_first_name",
+            "completed_by_last_name",
+            "completed_by_email",
+        ]
+    )
+
+    if _is_ajax_request(request):
+        return JsonResponse({"ok": True, "message": "Work completed recorded."})
+
+    return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1&done=1")
 
 
 

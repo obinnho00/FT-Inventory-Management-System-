@@ -14,6 +14,7 @@
 	.msg-list li.success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); }
 	.msg-list li.error { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5); }
 	.msg-list li.info { background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.5); }
+	.now-time { margin: 0 auto 10px; max-width: 900px; color: #93c5fd; font-size: 13px; text-align: center; }
 	.panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 	.panel { background: rgba(30,41,59,0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 16px; }
 	.panel h3 { margin: 0 0 12px; color: #fff; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.12); font-size: 18px; }
@@ -62,6 +63,7 @@
 		<h2>Work Station Notifications</h2>
 		<p>Station calls and engineering response queue.</p>
 	</div>
+	<div class="now-time" id="ncNowDisplay">North Carolina Time: {{ current_nc_time }}</div>
 
 	{% if messages %}
 	<ul class="msg-list">
@@ -133,7 +135,7 @@
 
 	<section class="panel">
 		<h3>Live Station Help Alerts</h3>
-		<div class="alert-grid">
+		<div class="alert-grid" id="liveAlertGrid">
 			{% for alert in active_alerts %}
 			<div class="alert-card">
 				<h4>{{ alert.station.name }} needs help</h4>
@@ -143,7 +145,7 @@
 				<p class="alert-line"><strong>Scanned:</strong> {{ alert.scanned_at }}</p>
 				<p class="alert-line"><strong>Message:</strong> {{ alert.message|default:'Station needs help.' }}</p>
 				<div class="alert-actions">
-					<form method="post" action="{% url 'work_station_accept' %}">
+					<form method="post" action="{% url 'work_station_accept' %}" class="js-live-action">
 						{% csrf_token %}
 						<input type="hidden" name="work_order_id" value="{{ alert.id }}">
 						<input type="hidden" name="station_id" value="{{ alert.station.id }}">
@@ -160,7 +162,7 @@
 
 	<section class="table-panel">
 		<h3>Department Work Requests</h3>
-		<table class="wo-table">
+		<table class="wo-table" id="workOrdersTable">
 			<thead>
 				<tr>
 					<th>Priority</th>
@@ -174,7 +176,7 @@
 					<th>Action</th>
 				</tr>
 			</thead>
-			<tbody>
+			<tbody id="workOrdersBody">
 				{% for item in work_orders %}
 				<tr>
 					<td>
@@ -205,12 +207,19 @@
 					<td>{{ item.scanned_at }}</td>
 					<td>
 						{% if item.status == 'NEW' %}
-						<form method="post" action="{% url 'work_station_accept' %}">
+						<form method="post" action="{% url 'work_station_accept' %}" class="js-live-action">
 							{% csrf_token %}
 							<input type="hidden" name="work_order_id" value="{{ item.id }}">
 							<input type="hidden" name="station_id" value="{{ item.station.id }}">
 							<input type="hidden" name="department_id" value="{{ item.department.id }}">
 							<button type="submit" class="btn btn-warning">Accept (Coming)</button>
+						</form>
+						{% elif item.status == 'COMING' %}
+						<form method="post" action="{% url 'work_station_complete' %}" class="js-live-action">
+							{% csrf_token %}
+							<input type="hidden" name="work_order_id" value="{{ item.id }}">
+							<input type="hidden" name="department_id" value="{{ item.department.id }}">
+							<button type="submit" class="btn">Work Completed</button>
 						</form>
 						{% else %}
 						-
@@ -225,4 +234,134 @@
 	</section>
 	{% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{% if not is_scanner_view %}
+<script>
+(() => {
+	const departmentSelect = document.getElementById("department_id");
+	const alertGrid = document.getElementById("liveAlertGrid");
+	const workOrdersBody = document.getElementById("workOrdersBody");
+	const nowDisplay = document.getElementById("ncNowDisplay");
+
+	function statusTag(status, label) {
+		if (status === "NEW") return `<span class="tag tag-status-new">${label}</span>`;
+		if (status === "COMING") return `<span class="tag tag-status-coming">${label}</span>`;
+		if (status === "CANCELLED") return `<span class="tag tag-status-cancelled">${label}</span>`;
+		return `<span class="tag tag-status-completed">${label}</span>`;
+	}
+
+	function priorityTag(priority, label) {
+		if (priority === 1) return `<span class="tag tag-high">${label}</span>`;
+		if (priority === 2) return `<span class="tag tag-medium">${label}</span>`;
+		return `<span class="tag tag-low">${label}</span>`;
+	}
+
+	function buildActionCell(item) {
+		if (item.status === "NEW") {
+			return `
+				<form method="post" action="{% url 'work_station_accept' %}" class="js-live-action">
+					<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+					<input type="hidden" name="work_order_id" value="${item.id}">
+					<input type="hidden" name="station_id" value="${item.station_id}">
+					<input type="hidden" name="department_id" value="${departmentSelect ? departmentSelect.value : ''}">
+					<button type="submit" class="btn btn-warning">Accept (Coming)</button>
+				</form>
+			`;
+		}
+		if (item.status === "COMING") {
+			return `
+				<form method="post" action="{% url 'work_station_complete' %}" class="js-live-action">
+					<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+					<input type="hidden" name="work_order_id" value="${item.id}">
+					<input type="hidden" name="department_id" value="${departmentSelect ? departmentSelect.value : ''}">
+					<button type="submit" class="btn">Work Completed</button>
+				</form>
+			`;
+		}
+		return "-";
+	}
+
+	function renderAlerts(alerts) {
+		if (!alertGrid) return;
+		if (!alerts.length) {
+			alertGrid.innerHTML = '<div class="alert-card"><p class="alert-line">No active station help alerts.</p></div>';
+			return;
+		}
+		alertGrid.innerHTML = alerts.map((item) => `
+			<div class="alert-card">
+				<h4>${item.station_name} needs help</h4>
+				<p class="alert-line"><strong>Department:</strong> ${item.department_name} (${item.location_name})</p>
+				<p class="alert-line"><strong>Machine:</strong> ${item.machine_name}</p>
+				<p class="alert-line"><strong>Priority:</strong> ${item.priority_label}</p>
+				<p class="alert-line"><strong>Scanned:</strong> ${item.scanned_at}</p>
+				<p class="alert-line"><strong>Message:</strong> ${item.message}</p>
+				<div class="alert-actions">${buildActionCell(item)}</div>
+			</div>
+		`).join("");
+		bindActionForms();
+	}
+
+	function renderWorkOrders(items) {
+		if (!workOrdersBody) return;
+		if (!items.length) {
+			workOrdersBody.innerHTML = '<tr><td colspan="9">No requests found.</td></tr>';
+			return;
+		}
+		workOrdersBody.innerHTML = items.map((item) => `
+			<tr>
+				<td>${priorityTag(item.priority, item.priority_label)}</td>
+				<td>${statusTag(item.status, item.status_label)}</td>
+				<td>${item.department_name}</td>
+				<td>${item.location_name}</td>
+				<td>${item.station_name}</td>
+				<td>${item.machine_name}</td>
+				<td>${item.message}</td>
+				<td>${item.scanned_at}</td>
+				<td>${buildActionCell(item)}</td>
+			</tr>
+		`).join("");
+		bindActionForms();
+	}
+
+	async function refreshLiveData() {
+		const departmentId = departmentSelect ? departmentSelect.value : "";
+		const url = `{% url 'work_station_live_status' %}?department_id=${encodeURIComponent(departmentId || "")}`;
+		const response = await fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+		if (!response.ok) return;
+		const data = await response.json();
+		if (!data.ok) return;
+		if (nowDisplay) {
+			nowDisplay.textContent = `North Carolina Time: ${data.now}`;
+		}
+		renderAlerts(data.alerts || []);
+		renderWorkOrders(data.work_orders || []);
+	}
+
+	async function submitLiveForm(form) {
+		const body = new FormData(form);
+		await fetch(form.action, {
+			method: "POST",
+			body,
+			headers: { "X-Requested-With": "XMLHttpRequest" }
+		});
+		await refreshLiveData();
+	}
+
+	function bindActionForms() {
+		document.querySelectorAll(".js-live-action").forEach((form) => {
+			form.addEventListener("submit", async (event) => {
+				event.preventDefault();
+				await submitLiveForm(form);
+			});
+		});
+	}
+
+	bindActionForms();
+	refreshLiveData();
+	setInterval(refreshLiveData, 3000);
+})();
+</script>
+{% endif %}
 {% endblock %}

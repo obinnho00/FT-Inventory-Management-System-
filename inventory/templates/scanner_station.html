@@ -9,15 +9,18 @@
     .scanner-card { background: rgba(30,41,59,0.95); border: 1px solid rgba(255,255,255,0.16); border-radius: 14px; padding: 18px; }
     .scanner-title { margin: 0 0 10px; text-align: center; color: #fff; font-size: 22px; }
     .line { margin: 6px 0; color: #cbd5e1; font-size: 14px; }
+    .line-time { margin: 6px 0; color: #93c5fd; font-size: 13px; }
     .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
     .btn { border: none; border-radius: 10px; padding: 12px 14px; font-size: 15px; font-weight: 600; cursor: pointer; }
     .btn-call { background: #2563eb; color: #fff; }
     .btn-cancel { background: #ef4444; color: #fff; }
+    .btn-complete { background: #0ea5e9; color: #fff; }
     .screen { margin-top: 14px; border-radius: 14px; padding: 22px; text-align: center; }
     .screen h2 { margin: 0 0 8px; color: #fff; font-size: 30px; }
     .screen p { margin: 0; color: #e2e8f0; font-size: 16px; }
     .coming { background: linear-gradient(135deg, #15803d, #22c55e); border: 1px solid rgba(187,247,208,0.7); }
     .done { background: linear-gradient(135deg, #0891b2, #22d3ee); border: 1px solid rgba(186,230,253,0.7); }
+    .cancelled { background: linear-gradient(135deg, #b91c1c, #ef4444); border: 1px solid rgba(254,202,202,0.7); }
     .msg-list { margin: 0 0 12px; padding: 0; list-style: none; }
     .msg-list li { padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
     .msg-list li.success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); }
@@ -39,44 +42,59 @@
     {% if selected_station %}
     <section class="scanner-card">
         <h1 class="scanner-title">{{ selected_station.name }}</h1>
-        <p class="line"><strong>Department:</strong> {{ selected_station.department.name }}</p>
-        <p class="line"><strong>Location:</strong> {{ selected_station.department.building.name }}</p>
+        <p class="line" id="scannerDepartment"><strong>Department:</strong> {{ selected_station.department.name }}</p>
+        <p class="line" id="scannerLocation"><strong>Location:</strong> {{ selected_station.department.building.name }}</p>
+        <p class="line-time" id="scannerNow"><strong>North Carolina Time:</strong> {{ current_nc_time }}</p>
         {% if station_latest_request %}
-        <p class="line"><strong>Current Status:</strong> {{ station_latest_request.get_status_display }}</p>
+        <p class="line" id="scannerStatus"><strong>Current Status:</strong> {{ station_latest_request.get_status_display }}</p>
         {% else %}
-        <p class="line"><strong>Current Status:</strong> No active request</p>
+        <p class="line" id="scannerStatus"><strong>Current Status:</strong> No active request</p>
         {% endif %}
 
         <div class="actions">
-            <form method="post" action="{% url 'work_station_scan_call' %}">
+            <form method="post" action="{% url 'work_station_scan_call' %}" class="js-scanner-action">
                 {% csrf_token %}
                 <input type="hidden" name="station_id" value="{{ selected_station.id }}">
                 <button class="btn btn-call" type="submit">Call Engineering</button>
             </form>
-            <form method="post" action="{% url 'work_station_scan_cancel' %}">
+            <form method="post" action="{% url 'work_station_scan_cancel' %}" class="js-scanner-action">
                 {% csrf_token %}
                 <input type="hidden" name="station_id" value="{{ selected_station.id }}">
                 <button class="btn btn-cancel" type="submit">Cancel Call</button>
             </form>
         </div>
+        <div class="actions" style="margin-top:10px;">
+            <form method="post" action="{% url 'work_station_scan_complete' %}" class="js-scanner-action" style="grid-column: 1 / -1;">
+                {% csrf_token %}
+                <input type="hidden" name="station_id" value="{{ selected_station.id }}">
+                <button class="btn btn-complete" type="submit">Work Completed</button>
+            </form>
+        </div>
     </section>
 
     {% if just_completed %}
-    <section class="screen done">
+    <section class="screen done" id="doneScreen">
         <h2>Work Completed</h2>
         <p>Issue resolved and completion recorded.</p>
     </section>
     {% elif station_latest_request and station_latest_request.status == 'COMING' %}
-    <section class="screen coming">
+    <section class="screen coming" id="comingScreen">
         <h2>COMING</h2>
         <p>Engineering is on the way to this station.</p>
     </section>
-    <script>
-        setTimeout(function () {
-            window.location.reload();
-        }, 5000);
-    </script>
     {% endif %}
+    <section class="screen done" id="doneScreen" style="display:none;">
+        <h2>Work Completed</h2>
+        <p>Issue resolved and completion recorded.</p>
+    </section>
+    <section class="screen coming" id="comingScreen" style="display:none;">
+        <h2>COMING</h2>
+        <p>Engineering is on the way to this station.</p>
+    </section>
+    <section class="screen cancelled" id="cancelledScreen" style="display:none;">
+        <h2>CANCELLED</h2>
+        <p>The help call was cancelled.</p>
+    </section>
     {% else %}
     <section class="scanner-card">
         <h1 class="scanner-title">Invalid Station QR</h1>
@@ -84,4 +102,78 @@
     </section>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{% if selected_station %}
+<script>
+(() => {
+    const stationId = "{{ selected_station.id }}";
+    const statusEl = document.getElementById("scannerStatus");
+    const nowEl = document.getElementById("scannerNow");
+    const doneScreen = document.getElementById("doneScreen");
+    const comingScreen = document.getElementById("comingScreen");
+    const cancelledScreen = document.getElementById("cancelledScreen");
+
+    function updateScreens(status) {
+        if (!doneScreen || !comingScreen || !cancelledScreen) return;
+        doneScreen.style.display = status === "COMPLETED" ? "block" : "none";
+        comingScreen.style.display = status === "COMING" ? "block" : "none";
+        cancelledScreen.style.display = status === "CANCELLED" ? "block" : "none";
+    }
+
+    async function refreshScannerStatus() {
+        try {
+            const response = await fetch(`{% url 'work_station_live_status' %}?station_id=${stationId}`, {
+                headers: { "X-Requested-With": "XMLHttpRequest" }
+            });
+            if (!response.ok) return;
+            const data = await response.json();
+            if (!data.ok) return;
+
+            if (nowEl) {
+                nowEl.innerHTML = `<strong>North Carolina Time:</strong> ${data.now}`;
+            }
+
+            if (data.latest) {
+                if (statusEl) {
+                    statusEl.innerHTML = `<strong>Current Status:</strong> ${data.latest.status_label}`;
+                }
+                updateScreens(data.latest.status);
+            } else {
+                if (statusEl) {
+                    statusEl.innerHTML = "<strong>Current Status:</strong> No active request";
+                }
+                updateScreens("");
+            }
+        } catch (error) {
+        }
+    }
+
+    async function postAction(form) {
+        const formData = new FormData(form);
+        const response = await fetch(form.action, {
+            method: "POST",
+            body: formData,
+            headers: { "X-Requested-With": "XMLHttpRequest" }
+        });
+        const payload = await response.json().catch(() => null);
+        if (payload && payload.state === "CANCELLED") {
+            updateScreens("CANCELLED");
+        }
+        await refreshScannerStatus();
+    }
+
+    document.querySelectorAll(".js-scanner-action").forEach((form) => {
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            await postAction(form);
+        });
+    });
+
+    refreshScannerStatus();
+    setInterval(refreshScannerStatus, 3000);
+})();
+</script>
+{% endif %}
 {% endblock %}
