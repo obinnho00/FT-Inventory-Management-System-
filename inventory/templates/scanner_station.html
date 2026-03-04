@@ -80,7 +80,7 @@
     {% elif station_latest_request and station_latest_request.status == 'COMING' %}
     <section class="screen coming" id="comingScreen">
         <h2>COMING</h2>
-        <p>Engineering is on the way to this station.</p>
+        <p id="comingEngineerText">{{ station_latest_request.technician_first_name }} {{ station_latest_request.technician_last_name }} is on the way to this station.</p>
     </section>
     {% endif %}
     <section class="screen done" id="doneScreen" style="display:none;">
@@ -114,6 +114,7 @@
     const doneScreen = document.getElementById("doneScreen");
     const comingScreen = document.getElementById("comingScreen");
     const cancelledScreen = document.getElementById("cancelledScreen");
+    const comingEngineerText = document.getElementById("comingEngineerText");
 
     function updateScreens(status) {
         if (!doneScreen || !comingScreen || !cancelledScreen) return;
@@ -138,6 +139,10 @@
             if (data.latest) {
                 if (statusEl) {
                     statusEl.innerHTML = `<strong>Current Status:</strong> ${data.latest.status_label}`;
+                }
+                if (comingEngineerText && data.latest.status === "COMING") {
+                    const engineerName = data.latest.technician_name || "Engineering Team";
+                    comingEngineerText.textContent = `${engineerName} is on the way to this station.`;
                 }
                 updateScreens(data.latest.status);
             } else {

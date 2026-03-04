@@ -485,7 +485,7 @@ class WorkOrderRequest(models.Model):
 
     class Meta:
         db_table = "inventory_work_order_request"
-        ordering = ["priority", "-scanned_at"]
+        ordering = ["scanned_at"]
 
     def __str__(self):
         machine_name = self.machine.name if self.machine else "No Machine"

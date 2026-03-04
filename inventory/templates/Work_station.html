@@ -173,6 +173,8 @@
 					<th>Machine</th>
 					<th>Message</th>
 					<th>Scanned</th>
+					<th>Accepted</th>
+					<th>Completed</th>
 					<th>Action</th>
 				</tr>
 			</thead>
@@ -205,6 +207,8 @@
 					<td>{{ item.machine.name|default:'-' }}</td>
 					<td>{{ item.message|default:'-' }}</td>
 					<td>{{ item.scanned_at }}</td>
+					<td>{{ item.accepted_at|default:'-' }}</td>
+					<td>{{ item.completed_at|default:'-' }}</td>
 					<td>
 						{% if item.status == 'NEW' %}
 						<form method="post" action="{% url 'work_station_accept' %}" class="js-live-action">
@@ -227,7 +231,7 @@
 					</td>
 				</tr>
 				{% empty %}
-				<tr><td colspan="9">No requests found.</td></tr>
+				<tr><td colspan="11">No requests found.</td></tr>
 				{% endfor %}
 			</tbody>
 		</table>
@@ -306,7 +310,7 @@
 	function renderWorkOrders(items) {
 		if (!workOrdersBody) return;
 		if (!items.length) {
-			workOrdersBody.innerHTML = '<tr><td colspan="9">No requests found.</td></tr>';
+			workOrdersBody.innerHTML = '<tr><td colspan="11">No requests found.</td></tr>';
 			return;
 		}
 		workOrdersBody.innerHTML = items.map((item) => `
@@ -319,6 +323,8 @@
 				<td>${item.machine_name}</td>
 				<td>${item.message}</td>
 				<td>${item.scanned_at}</td>
+				<td>${item.accepted_at}</td>
+				<td>${item.completed_at}</td>
 				<td>${buildActionCell(item)}</td>
 			</tr>
 		`).join("");

@@ -1370,6 +1370,7 @@ def _format_nc_time(value):
 
 
 def _serialize_work_order(item):
+    technician_name = f"{(item.technician_first_name or '').strip()} {(item.technician_last_name or '').strip()}".strip()
     return {
         "id": item.id,
         "priority": item.priority,
@@ -1382,8 +1383,11 @@ def _serialize_work_order(item):
         "station_id": item.station_id,
         "machine_name": item.machine.name if item.machine else "-",
         "message": item.message or "-",
+        "technician_name": technician_name or "Engineering Team",
+        "technician_email": item.technician_email or "",
         "scanned_at": _format_nc_time(item.scanned_at),
         "accepted_at": _format_nc_time(item.accepted_at),
+        "completed_at": _format_nc_time(item.completed_at),
     }
 
 
@@ -1488,7 +1492,7 @@ def work_station_view(request):
         if selected_department:
             work_orders = work_orders.filter(department=selected_department)
 
-        work_orders = work_orders.order_by("priority", "-scanned_at")
+        work_orders = work_orders.order_by("scanned_at")
     else:
         departments = Department.objects.none()
         stations = Station.objects.none()
@@ -1506,7 +1510,7 @@ def work_station_view(request):
         active_alerts = list(
             WorkOrderRequest.objects.select_related("department", "station", "machine")
             .filter(status=WorkOrderRequest.STATUS_NEW, department_id__in=allowed_department_ids)
-            .order_by("priority", "-scanned_at")
+            .order_by("scanned_at")
         )
     else:
         active_alerts = []
@@ -1572,12 +1576,12 @@ def work_station_live_status(request):
     )
     if department_id:
         work_orders = work_orders.filter(department_id=department_id)
-    work_orders = work_orders.order_by("priority", "-scanned_at")[:120]
+    work_orders = work_orders.order_by("scanned_at")[:120]
 
     active_alerts = (
         WorkOrderRequest.objects.select_related("department", "station", "machine")
         .filter(status=WorkOrderRequest.STATUS_NEW, department_id__in=allowed_department_ids)
-        .order_by("priority", "-scanned_at")[:50]
+        .order_by("scanned_at")[:50]
     )
 
     return JsonResponse(
