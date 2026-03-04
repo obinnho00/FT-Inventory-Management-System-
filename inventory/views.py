@@ -1374,8 +1374,16 @@ def _format_nc_time(value):
     return timezone.localtime(value, NC_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p ET")
 
 
+def _resolve_station_machine_name(station):
+    if not station:
+        return "-"
+    linked_machine = Machine.objects.filter(station=station).order_by("name").first()
+    return linked_machine.name if linked_machine else "-"
+
+
 def _serialize_work_order(item):
     technician_name = f"{(item.technician_first_name or '').strip()} {(item.technician_last_name or '').strip()}".strip()
+    machine_name = item.machine.name if item.machine else _resolve_station_machine_name(item.station)
     return {
         "id": item.id,
         "priority": item.priority,
@@ -1386,7 +1394,7 @@ def _serialize_work_order(item):
         "location_name": item.department.building.name,
         "station_name": item.station.name,
         "station_id": item.station_id,
-        "machine_name": item.machine.name if item.machine else "-",
+        "machine_name": machine_name,
         "message": item.message or "-",
         "technician_name": technician_name or "Engineering Team",
         "technician_email": item.technician_email or "",
@@ -1854,13 +1862,18 @@ def work_station_scan_call(request):
         status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING],
     ).order_by("-scanned_at").first()
     if existing_active_request:
+        if not existing_active_request.machine_id:
+            fallback_machine = Machine.objects.filter(station=station).order_by("name").first()
+            if fallback_machine:
+                existing_active_request.machine = fallback_machine
+                existing_active_request.save(update_fields=["machine"])
         if _is_ajax_request(request):
             return JsonResponse({"ok": False, "message": "Call already active for this station."}, status=400)
         messages.info(request, "Call already active for this station.")
         return redirect(f"{reverse('work_station')}?station_id={station.id}&scan=1")
 
     linked_machine = (
-        Machine.objects.filter(station=station, department=station.department)
+        Machine.objects.filter(station=station)
         .order_by("name")
         .first()
     )
