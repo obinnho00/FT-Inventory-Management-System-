@@ -32,6 +32,8 @@
 	.screen-completed { background: linear-gradient(135deg, #0ea5e9, #22d3ee); border: 1px solid rgba(186,230,253,0.7); }
 	.alert-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; margin-top: 12px; }
 	.alert-card { background: rgba(15,29,45,0.92); border: 1px solid rgba(255,255,255,0.16); border-radius: 10px; padding: 12px; }
+	.alert-card.alert-new { background: rgba(127,29,29,0.45); border-color: rgba(239,68,68,0.55); }
+	.alert-card.alert-coming { background: rgba(153,27,27,0.35); border-color: rgba(248,113,113,0.6); }
 	.alert-card h4 { margin: 0 0 8px; color: #fff; font-size: 16px; }
 	.alert-line { margin: 3px 0; color: #cbd5e1; font-size: 13px; }
 	.alert-actions { margin-top: 10px; display: flex; gap: 8px; }
@@ -137,8 +139,9 @@
 		<h3>Live Station Help Alerts</h3>
 		<div class="alert-grid" id="liveAlertGrid">
 			{% for alert in active_alerts %}
-			<div class="alert-card">
+			<div class="alert-card {% if alert.status == 'NEW' %}alert-new{% elif alert.status == 'COMING' %}alert-coming{% endif %}">
 				<h4>{{ alert.station.name }} needs help</h4>
+				<p class="alert-line"><strong>Status:</strong> {{ alert.get_status_display }}</p>
 				<p class="alert-line"><strong>Department:</strong> {{ alert.department.name }} ({{ alert.department.building.name }})</p>
 				<p class="alert-line"><strong>Machine:</strong> {{ alert.machine.name|default:'Not specified' }}</p>
 				<p class="alert-line"><strong>Priority:</strong> {{ alert.get_priority_display }}</p>
@@ -294,8 +297,9 @@
 			return;
 		}
 		alertGrid.innerHTML = alerts.map((item) => `
-			<div class="alert-card">
+			<div class="alert-card ${item.status === "NEW" ? "alert-new" : item.status === "COMING" ? "alert-coming" : ""}">
 				<h4>${item.station_name} needs help</h4>
+				<p class="alert-line"><strong>Status:</strong> ${item.status_label}</p>
 				<p class="alert-line"><strong>Department:</strong> ${item.department_name} (${item.location_name})</p>
 				<p class="alert-line"><strong>Machine:</strong> ${item.machine_name}</p>
 				<p class="alert-line"><strong>Priority:</strong> ${item.priority_label}</p>

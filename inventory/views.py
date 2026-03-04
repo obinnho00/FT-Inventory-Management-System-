@@ -1444,23 +1444,6 @@ def work_station_view(request):
             selected_department = selected_station.department
             machine_options = Machine.objects.filter(department=selected_department).order_by("name")
             department_id = str(selected_department.id)
-
-            if scan_flag:
-                active_request = WorkOrderRequest.objects.filter(
-                    station=selected_station,
-                    status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING],
-                ).order_by("-scanned_at").first()
-                if not active_request:
-                    station_latest_request = WorkOrderRequest.objects.create(
-                        station=selected_station,
-                        department=selected_department,
-                        message="Station needs help.",
-                        priority=WorkOrderRequest.PRIORITY_MEDIUM,
-                        status=WorkOrderRequest.STATUS_NEW,
-                    )
-                    messages.success(request, f"Call sent from {selected_station.name}. Engineering has been notified.")
-                else:
-                    station_latest_request = active_request
         else:
             if is_inventory_user:
                 messages.error(request, "You are not allowed to access this station.")
@@ -1509,7 +1492,7 @@ def work_station_view(request):
     if is_inventory_user:
         active_alerts = list(
             WorkOrderRequest.objects.select_related("department", "station", "machine")
-            .filter(status=WorkOrderRequest.STATUS_NEW, department_id__in=allowed_department_ids)
+            .filter(status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING], department_id__in=allowed_department_ids)
             .order_by("scanned_at")
         )
     else:
@@ -1580,7 +1563,7 @@ def work_station_live_status(request):
 
     active_alerts = (
         WorkOrderRequest.objects.select_related("department", "station", "machine")
-        .filter(status=WorkOrderRequest.STATUS_NEW, department_id__in=allowed_department_ids)
+        .filter(status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING], department_id__in=allowed_department_ids)
         .order_by("scanned_at")[:50]
     )
 
