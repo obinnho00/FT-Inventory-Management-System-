@@ -221,5 +221,47 @@
 		</div>
 	</section>
 	{% endif %}
+
+	<section class="panel" style="margin-top:14px;">
+		<h3>QR Code Library</h3>
+		<form method="get" action="{% url 'manage_department' %}">
+			<div class="field">
+				<label for="qr_department_id">Select Department</label>
+				<select id="qr_department_id" name="qr_department_id">
+					<option value="">All assigned departments</option>
+					{% for department in departments %}
+						<option value="{{ department.id }}" {% if selected_qr_department_id == department.id|stringformat:'s' %}selected{% endif %}>
+							{{ department.name }} ({{ department.building.name }})
+						</option>
+					{% endfor %}
+				</select>
+			</div>
+			<button class="btn" type="submit">Show QR Codes</button>
+		</form>
+
+		<div class="qr-grid">
+			{% for row in qr_library %}
+			<div class="qr-card">
+				<img src="{{ row.qr_image_url }}" alt="QR for {{ row.station_name }}">
+				<div class="qr-title">{{ row.station_name }}</div>
+				<div class="qr-sub">Department: {{ row.department_name }}</div>
+				<div class="qr-sub">Location: {{ row.building_name }}</div>
+				<div class="qr-sub" style="margin-top:8px; display:flex; gap:10px; flex-wrap:wrap;">
+					{% if row.qr_png_url %}
+					<a href="{{ row.qr_png_url }}" download style="color:#93c5fd;">Download PNG</a>
+					{% endif %}
+					{% if row.qr_pdf_url %}
+					<a href="{{ row.qr_pdf_url }}" download style="color:#93c5fd;">Download PDF</a>
+					{% endif %}
+				</div>
+			</div>
+			{% empty %}
+			<div class="qr-card">
+				<div class="qr-title">No QR codes found</div>
+				<div class="qr-sub">Create stations first, then their QR codes will appear here.</div>
+			</div>
+			{% endfor %}
+		</div>
+	</section>
 </div>
 {% endblock %}

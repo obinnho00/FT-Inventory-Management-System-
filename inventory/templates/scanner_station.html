@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Station Help | ABB Inventory System{% endblock %}
+
+{% block extra_css %}
+<style>
+    body { background: #0f172a; }
+    .scanner-wrap { max-width: 680px; margin: 22px auto; padding: 0 14px 24px; color: #e2e8f0; }
+    .scanner-card { background: rgba(30,41,59,0.95); border: 1px solid rgba(255,255,255,0.16); border-radius: 14px; padding: 18px; }
+    .scanner-title { margin: 0 0 10px; text-align: center; color: #fff; font-size: 22px; }
+    .line { margin: 6px 0; color: #cbd5e1; font-size: 14px; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    .btn { border: none; border-radius: 10px; padding: 12px 14px; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .btn-call { background: #2563eb; color: #fff; }
+    .btn-cancel { background: #ef4444; color: #fff; }
+    .screen { margin-top: 14px; border-radius: 14px; padding: 22px; text-align: center; }
+    .screen h2 { margin: 0 0 8px; color: #fff; font-size: 30px; }
+    .screen p { margin: 0; color: #e2e8f0; font-size: 16px; }
+    .coming { background: linear-gradient(135deg, #15803d, #22c55e); border: 1px solid rgba(187,247,208,0.7); }
+    .done { background: linear-gradient(135deg, #0891b2, #22d3ee); border: 1px solid rgba(186,230,253,0.7); }
+    .msg-list { margin: 0 0 12px; padding: 0; list-style: none; }
+    .msg-list li { padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
+    .msg-list li.success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); }
+    .msg-list li.error { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5); }
+    .msg-list li.info { background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.5); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="scanner-wrap">
+    {% if messages %}
+    <ul class="msg-list">
+        {% for message in messages %}
+            <li class="{{ message.tags|default:'info' }}">{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if selected_station %}
+    <section class="scanner-card">
+        <h1 class="scanner-title">{{ selected_station.name }}</h1>
+        <p class="line"><strong>Department:</strong> {{ selected_station.department.name }}</p>
+        <p class="line"><strong>Location:</strong> {{ selected_station.department.building.name }}</p>
+        {% if station_latest_request %}
+        <p class="line"><strong>Current Status:</strong> {{ station_latest_request.get_status_display }}</p>
+        {% else %}
+        <p class="line"><strong>Current Status:</strong> No active request</p>
+        {% endif %}
+
+        <div class="actions">
+            <form method="post" action="{% url 'work_station_scan_call' %}">
+                {% csrf_token %}
+                <input type="hidden" name="station_id" value="{{ selected_station.id }}">
+                <button class="btn btn-call" type="submit">Call Engineering</button>
+            </form>
+            <form method="post" action="{% url 'work_station_scan_cancel' %}">
+                {% csrf_token %}
+                <input type="hidden" name="station_id" value="{{ selected_station.id }}">
+                <button class="btn btn-cancel" type="submit">Cancel Call</button>
+            </form>
+        </div>
+    </section>
+
+    {% if just_completed %}
+    <section class="screen done">
+        <h2>Work Completed</h2>
+        <p>Issue resolved and completion recorded.</p>
+    </section>
+    {% elif station_latest_request and station_latest_request.status == 'COMING' %}
+    <section class="screen coming">
+        <h2>COMING</h2>
+        <p>Engineering is on the way to this station.</p>
+    </section>
+    <script>
+        setTimeout(function () {
+            window.location.reload();
+        }, 5000);
+    </script>
+    {% endif %}
+    {% else %}
+    <section class="scanner-card">
+        <h1 class="scanner-title">Invalid Station QR</h1>
+        <p class="line">This QR does not match a valid station.</p>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

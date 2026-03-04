@@ -1312,9 +1312,7 @@ def create_qrcode(request):
 
 def _build_station_qr_data(request, station):
     station_page_url = request.build_absolute_uri(f"{reverse('work_station')}?station_id={station.id}&scan=1")
-    qr_payload = (
-        f"Station:{station.name}|Department:{station.department.name}|StationID:{station.id}|URL:{station_page_url}"
-    )
+    qr_payload = station_page_url
     qr_image_url = station.qr_image_url or (station.qr_png.url if station.qr_png else "")
     return {
         "station_id": station.id,
@@ -1500,6 +1498,8 @@ def work_station_view(request):
     else:
         active_alerts = []
 
+    is_scanner_view = bool(scan_flag and selected_station and not is_logged_in)
+
     context = {
         "departments": departments,
         "stations": stations,
@@ -1510,9 +1510,10 @@ def work_station_view(request):
         "station_latest_request": station_latest_request,
         "active_alerts": active_alerts,
         "just_completed": just_completed,
-        "is_scanner_view": bool(scan_flag and selected_station and not is_logged_in),
+        "is_scanner_view": is_scanner_view,
     }
-    return _render_template(request, "Work_station.html", context)
+    template_name = "scanner_station.html" if is_scanner_view else "Work_station.html"
+    return _render_template(request, template_name, context)
 
 
 @require_any_login
@@ -2021,6 +2022,42 @@ def manage_department(request):
     departments = Department.objects.select_related("building").filter(id__in=manager_department_ids).order_by("name")
     machines = Machine.objects.select_related("department", "station").filter(department_id__in=manager_department_ids).order_by("name")
     stations = Station.objects.select_related("department", "department__building").filter(department_id__in=manager_department_ids).order_by("department__name", "name")
+    qr_department_id = request.GET.get("qr_department_id", "").strip()
+    qr_library_stations = stations
+
+    if qr_department_id:
+        try:
+            qr_department_id_int = int(qr_department_id)
+        except ValueError:
+            qr_department_id_int = None
+
+        if qr_department_id_int and qr_department_id_int in manager_department_ids:
+            qr_library_stations = qr_library_stations.filter(department_id=qr_department_id_int)
+        else:
+            messages.error(request, "Invalid department selected for QR library.")
+            qr_department_id = ""
+
+    qr_library = []
+    for station in qr_library_stations:
+        if not station.qr_png or not station.qr_pdf or not station.qr_payload:
+            qr_data = _build_station_qr_data(request, station)
+            _save_station_qr_assets(station, qr_data["qr_payload"])
+            station.refresh_from_db(fields=["qr_payload", "qr_image_url", "qr_png", "qr_pdf"])
+
+        qr_data = _build_station_qr_data(request, station)
+        qr_library.append(
+            {
+                "station_id": station.id,
+                "station_name": station.name,
+                "department_name": station.department.name,
+                "building_name": station.department.building.name,
+                "qr_image_url": qr_data["qr_image_url"],
+                "qr_payload": qr_data["qr_payload"],
+                "qr_png_url": station.qr_png.url if station.qr_png else "",
+                "qr_pdf_url": station.qr_pdf.url if station.qr_pdf else "",
+            }
+        )
+
     station_qr_results = request.session.pop("manage_department_station_qr_results", [])
     context = {
         "buildings": buildings,
@@ -2029,5 +2066,7 @@ def manage_department(request):
         "stations": stations,
         "manager_account": manager_account,
         "station_qr_results": station_qr_results,
+        "qr_library": qr_library,
+        "selected_qr_department_id": qr_department_id,
     }
     return _render_template(request, "add_department.html", context)
