@@ -23,13 +23,30 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 import os
 
 from dotenv import load_dotenv
-load_dotenv()
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+ENVIRONMENT = os.environ.get("DJANGO_ENV", os.environ.get("ENVIRONMENT", "development")).strip().lower()
+
+if ENVIRONMENT in {"prod", "production"}:
+    load_dotenv(BASE_DIR / ".env.prod")
+else:
+    load_dotenv(BASE_DIR / ".env")
+
+# Keep existing environment variables (e.g., Render/Railway/Cloud Run) higher priority than dotenv values.
+load_dotenv(override=False)
 
 SECRET_KEY = os.environ.get("SECRET_KEY")
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY is not set")
 
-DEBUG = os.environ.get("DEBUG", "0") == "1"
+DEBUG = _env_bool("DEBUG", default=False)
 
 ALLOWED_HOSTS = os.environ.get(
     "ALLOWED_HOSTS",
@@ -111,10 +128,14 @@ WSGI_APPLICATION = 'abb_inventory_system.wsgi.application'
 
 import dj_database_url
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = (
+    os.environ.get("DATABASE_URL")
+    or os.environ.get("PRODUCTION_DB")
+    or os.environ.get("Production_db")
+)
 
 if not DATABASE_URL:
-    raise ValueError("DATABASE_URL is not set in environment")
+    raise ValueError("DATABASE_URL is not set (accepted keys: DATABASE_URL, PRODUCTION_DB, Production_db)")
 
 DATABASES = {
     "default": dj_database_url.parse(
