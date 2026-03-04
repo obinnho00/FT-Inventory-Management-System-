@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}Work Station | ABB Inventory System{% endblock %}
+
+{% block extra_css %}
+<style>
+	body { background-color: #1E293B; }
+	.wrap { width: 100%; max-width: 1650px; margin: 24px auto; padding: 0 18px 28px; color: #e2e8f0; }
+	.head { text-align: center; margin-bottom: 14px; }
+	.head h2 { margin: 0 0 4px; color: #fff; font-size: 22px; font-weight: 500; }
+	.head p { margin: 0; color: #cbd5e1; font-size: 13px; }
+	.msg-list { margin: 0 auto 14px; padding: 0; list-style: none; max-width: 900px; }
+	.msg-list li { padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 13px; }
+	.msg-list li.success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); }
+	.msg-list li.error { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5); }
+	.msg-list li.info { background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.5); }
+	.panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+	.panel { background: rgba(30,41,59,0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 16px; }
+	.panel h3 { margin: 0 0 12px; color: #fff; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.12); font-size: 18px; }
+	.station-action-card { margin: 0 auto 16px; max-width: 900px; background: rgba(15,29,45,0.95); border: 1px solid rgba(255,255,255,0.15); border-radius: 14px; padding: 18px; }
+	.station-action-card h3 { margin: 0 0 10px; color: #fff; }
+	.station-line { margin: 5px 0; color: #cbd5e1; font-size: 14px; }
+	.action-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 10px; }
+	.big-btn { border: none; border-radius: 8px; padding: 10px 16px; font-weight: 600; font-size: 14px; cursor: pointer; }
+	.btn-call { background: #2563eb; color: #fff; }
+	.btn-cancel { background: #ef4444; color: #fff; }
+	.screen { margin: 14px auto; max-width: 900px; border-radius: 14px; padding: 24px; text-align: center; }
+	.screen h2 { margin: 0 0 10px; font-size: 30px; color: #fff; }
+	.screen p { margin: 0; color: #e5e7eb; font-size: 16px; }
+	.screen-coming { background: linear-gradient(135deg, #16a34a, #22c55e); border: 1px solid rgba(187,247,208,0.7); }
+	.screen-completed { background: linear-gradient(135deg, #0ea5e9, #22d3ee); border: 1px solid rgba(186,230,253,0.7); }
+	.alert-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; margin-top: 12px; }
+	.alert-card { background: rgba(15,29,45,0.92); border: 1px solid rgba(255,255,255,0.16); border-radius: 10px; padding: 12px; }
+	.alert-card h4 { margin: 0 0 8px; color: #fff; font-size: 16px; }
+	.alert-line { margin: 3px 0; color: #cbd5e1; font-size: 13px; }
+	.alert-actions { margin-top: 10px; display: flex; gap: 8px; }
+	.field { margin-bottom: 12px; }
+	.field label { display: block; margin-bottom: 6px; color: #cbd5e1; font-size: 13px; }
+	.field input, .field select, .field textarea { width: 100%; box-sizing: border-box; padding: 10px 11px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.22); background: #0f1d2d; color: #fff; font-size: 14px; }
+	.field textarea { min-height: 80px; resize: vertical; }
+	.btn { border: none; border-radius: 7px; padding: 8px 13px; font-weight: 500; font-size: 13px; cursor: pointer; background: #3498db; color: #fff; }
+	.btn-warning { background: #f59e0b; color: #111827; }
+	.table-panel { margin-top: 18px; background: rgba(30,41,59,0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 16px; overflow-x: auto; }
+	.wo-table { width: 100%; border-collapse: collapse; }
+	.wo-table th, .wo-table td { border: 1px solid rgba(255,255,255,0.12); padding: 9px; text-align: left; font-size: 13px; vertical-align: top; }
+	.wo-table th { background: #0f1d2d; color: #fff; font-weight: 500; }
+	.tag { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+	.tag-high { background: rgba(239,68,68,0.25); color: #fecaca; border: 1px solid rgba(239,68,68,0.5); }
+	.tag-medium { background: rgba(245,158,11,0.25); color: #fde68a; border: 1px solid rgba(245,158,11,0.5); }
+	.tag-low { background: rgba(34,197,94,0.25); color: #bbf7d0; border: 1px solid rgba(34,197,94,0.5); }
+	.tag-status-new { background: rgba(59,130,246,0.25); color: #bfdbfe; border: 1px solid rgba(59,130,246,0.5); }
+	.tag-status-coming { background: rgba(16,185,129,0.25); color: #a7f3d0; border: 1px solid rgba(16,185,129,0.5); }
+	.tag-status-completed { background: rgba(107,114,128,0.25); color: #d1d5db; border: 1px solid rgba(107,114,128,0.5); }
+	.tag-status-cancelled { background: rgba(239,68,68,0.22); color: #fecaca; border: 1px solid rgba(239,68,68,0.5); }
+	@media (max-width: 980px) { .panel-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wrap">
+	<div class="head">
+		<h2>Work Station Notifications</h2>
+		<p>Station calls and engineering response queue.</p>
+	</div>
+
+	{% if messages %}
+	<ul class="msg-list">
+		{% for message in messages %}
+			<li class="{{ message.tags|default:'info' }}">{{ message }}</li>
+		{% endfor %}
+	</ul>
+	{% endif %}
+
+	{% if is_scanner_view and selected_station %}
+	<section class="station-action-card">
+		<h3>{{ selected_station.name }} - Station Action</h3>
+		<p class="station-line"><strong>Department:</strong> {{ selected_station.department.name }} ({{ selected_station.department.building.name }})</p>
+		{% if station_latest_request %}
+		<p class="station-line"><strong>Current Ticket:</strong> #{{ station_latest_request.id }} ({{ station_latest_request.get_status_display }})</p>
+		{% else %}
+		<p class="station-line">No active ticket for this station.</p>
+		{% endif %}
+		<div class="action-row">
+			<form method="post" action="{% url 'work_station_scan_call' %}">
+				{% csrf_token %}
+				<input type="hidden" name="station_id" value="{{ selected_station.id }}">
+				<button class="big-btn btn-call" type="submit">Call Engineering</button>
+			</form>
+			<form method="post" action="{% url 'work_station_scan_cancel' %}">
+				{% csrf_token %}
+				<input type="hidden" name="station_id" value="{{ selected_station.id }}">
+				<button class="big-btn btn-cancel" type="submit">Cancel Call</button>
+			</form>
+		</div>
+	</section>
+
+	{% if just_completed %}
+	<section class="screen screen-completed">
+		<h2>Work Completed</h2>
+		<p>Issue resolved for {{ selected_station.name }}. Completion recorded.</p>
+	</section>
+	{% elif station_latest_request and station_latest_request.status == 'COMING' %}
+	<section class="screen screen-coming">
+		<h2>COMING</h2>
+		<p>Technician {{ station_latest_request.technician_first_name }} {{ station_latest_request.technician_last_name }} is on the way.</p>
+	</section>
+	<script>
+		setTimeout(function () {
+			window.location.reload();
+		}, 5000);
+	</script>
+	{% endif %}
+	{% endif %}
+
+	{% if not is_scanner_view %}
+	<section class="panel">
+		<h3>Department Queue Filter</h3>
+		<form method="get" action="{% url 'work_station' %}">
+			<div class="field">
+				<label for="department_id">Department</label>
+				<select id="department_id" name="department_id">
+					<option value="">All departments</option>
+					{% for department in departments %}
+						<option value="{{ department.id }}" {% if selected_department and selected_department.id == department.id %}selected{% endif %}>
+							{{ department.name }} ({{ department.building.name }})
+						</option>
+					{% endfor %}
+				</select>
+			</div>
+			<button class="btn" type="submit">Show Queue</button>
+		</form>
+	</section>
+
+	<section class="panel">
+		<h3>Live Station Help Alerts</h3>
+		<div class="alert-grid">
+			{% for alert in active_alerts %}
+			<div class="alert-card">
+				<h4>{{ alert.station.name }} needs help</h4>
+				<p class="alert-line"><strong>Department:</strong> {{ alert.department.name }} ({{ alert.department.building.name }})</p>
+				<p class="alert-line"><strong>Machine:</strong> {{ alert.machine.name|default:'Not specified' }}</p>
+				<p class="alert-line"><strong>Priority:</strong> {{ alert.get_priority_display }}</p>
+				<p class="alert-line"><strong>Scanned:</strong> {{ alert.scanned_at }}</p>
+				<p class="alert-line"><strong>Message:</strong> {{ alert.message|default:'Station needs help.' }}</p>
+				<div class="alert-actions">
+					<form method="post" action="{% url 'work_station_accept' %}">
+						{% csrf_token %}
+						<input type="hidden" name="work_order_id" value="{{ alert.id }}">
+						<input type="hidden" name="station_id" value="{{ alert.station.id }}">
+						<input type="hidden" name="department_id" value="{{ alert.department.id }}">
+						<button type="submit" class="btn btn-warning">Accept (Coming)</button>
+					</form>
+				</div>
+			</div>
+			{% empty %}
+			<div class="alert-card"><p class="alert-line">No active station help alerts.</p></div>
+			{% endfor %}
+		</div>
+	</section>
+
+	<section class="table-panel">
+		<h3>Department Work Requests</h3>
+		<table class="wo-table">
+			<thead>
+				<tr>
+					<th>Priority</th>
+					<th>Status</th>
+					<th>Department</th>
+					<th>Location</th>
+					<th>Station</th>
+					<th>Machine</th>
+					<th>Message</th>
+					<th>Scanned</th>
+					<th>Action</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for item in work_orders %}
+				<tr>
+					<td>
+						{% if item.priority == 1 %}
+							<span class="tag tag-high">High</span>
+						{% elif item.priority == 2 %}
+							<span class="tag tag-medium">Medium</span>
+						{% else %}
+							<span class="tag tag-low">Low</span>
+						{% endif %}
+					</td>
+					<td>
+						{% if item.status == 'NEW' %}
+							<span class="tag tag-status-new">New</span>
+						{% elif item.status == 'COMING' %}
+							<span class="tag tag-status-coming">Coming</span>
+						{% elif item.status == 'CANCELLED' %}
+							<span class="tag tag-status-cancelled">Cancelled</span>
+						{% else %}
+							<span class="tag tag-status-completed">Completed</span>
+						{% endif %}
+					</td>
+					<td>{{ item.department.name }}</td>
+					<td>{{ item.department.building.name }}</td>
+					<td>{{ item.station.name }}</td>
+					<td>{{ item.machine.name|default:'-' }}</td>
+					<td>{{ item.message|default:'-' }}</td>
+					<td>{{ item.scanned_at }}</td>
+					<td>
+						{% if item.status == 'NEW' %}
+						<form method="post" action="{% url 'work_station_accept' %}">
+							{% csrf_token %}
+							<input type="hidden" name="work_order_id" value="{{ item.id }}">
+							<input type="hidden" name="station_id" value="{{ item.station.id }}">
+							<input type="hidden" name="department_id" value="{{ item.department.id }}">
+							<button type="submit" class="btn btn-warning">Accept (Coming)</button>
+						</form>
+						{% else %}
+						-
+						{% endif %}
+					</td>
+				</tr>
+				{% empty %}
+				<tr><td colspan="9">No requests found.</td></tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</section>
+	{% endif %}
+</div>
+{% endblock %}

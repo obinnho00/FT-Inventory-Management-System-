@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Manager Login | ABB Inventory System{% endblock %}
 
@@ -14,6 +15,8 @@
     .msg-list li.error { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5); }
     .card { max-width: 760px; margin: 0 auto; background: rgba(30, 41, 59, 0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 16px; }
     .card h2 { margin: 0 0 10px; color: #fff; font-size: 18px; font-weight: 500; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.12); }
+    .login-image-wrap { text-align: center; margin: 10px 0 14px; }
+    .login-image { width: 110px; max-width: 100%; height: auto; }
     .field { margin-bottom: 12px; }
     .field label { display: block; margin-bottom: 6px; color: #cbd5e1; font-size: 13px; }
     .field input { width: 100%; box-sizing: border-box; padding: 10px 11px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.22); background: #0f1d2d; color: #fff; font-size: 14px; }
@@ -28,7 +31,7 @@
 {% block content %}
 <div class="wrap">
     <div class="head">
-        <h1>Manager Login</h1>
+        
     </div>
 
     {% if messages %}
@@ -39,8 +42,12 @@
     </ul>
     {% endif %}
 
+    <div class="login-image-wrap">
+        <img src="{% static 'image/Abblogo.png' %}" alt="ABB Header" class="login-image">
+    </div>
+
     <div class="card">
-        <h2>Sign In</h2>
+        <h2>Manager SignIn Only</h2>
         <form method="post" action="{% url 'manager_login' %}">
             {% csrf_token %}
             <div class="field">

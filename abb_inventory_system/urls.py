@@ -20,11 +20,19 @@ urlpatterns = [
     path('inventory/manager-login/', views.manager_login_view, name='manager_login'),
     path('inventory/admin-manager/', views.admin_manager_accounts_view, name='manager_admin'),
     path('inventory/manager-access/', views.grant_access_view, name='manager_access'),
+    path('inventory/add-department/', views.manage_department, name='manage_department'),
 
     path('submit-requirement/', views.handle_requirement_submission, name='submit_requirement'),
 
     path('inventory/upload-part-image/', views.upload_part_image_popup, name='upload_part_image_popup'),
     path('inventory/manage/', views.inventory_manage_view, name='inventory_manage'),
+    path('inventory/stations/create-qr/', views.create_qrcode, name='create_station_qrcode'),
+    path('inventory/work-station/', views.work_station_view, name='work_station'),
+    path('inventory/work-station/scan/call/', views.work_station_scan_call, name='work_station_scan_call'),
+    path('inventory/work-station/scan/cancel/', views.work_station_scan_cancel, name='work_station_scan_cancel'),
+    path('inventory/work-station/submit/', views.work_station_submit_request, name='work_station_submit'),
+    path('inventory/work-station/accept/', views.work_station_accept_request, name='work_station_accept'),
+    path('inventory/work-station/cancel/', views.work_station_cancel_request, name='work_station_cancel'),
 
     path("inventory/search/", views.inventory_search, name="inventory_search"),
 

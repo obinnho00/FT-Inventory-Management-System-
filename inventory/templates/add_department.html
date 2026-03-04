@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block title %}Manager Department Setup | ABB Inventory System{% endblock %}
+
+{% block extra_css %}
+<style>
+	body { background-color: #1E293B; }
+	.wrap { width: 100%; max-width: 1650px; margin: 24px auto; padding: 0 18px 28px; color: #e2e8f0; }
+	.head { text-align: center; margin-bottom: 14px; }
+	.head h2 { margin: 0 0 4px; color: #fff; font-size: 22px; font-weight: 500; }
+	.head p { margin: 0; color: #cbd5e1; font-size: 13px; }
+	.msg-list { margin: 0 auto 14px; padding: 0; list-style: none; max-width: 840px; }
+	.msg-list li { padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 13px; }
+	.msg-list li.success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); }
+	.msg-list li.error { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5); }
+	.panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+	.panel { background: rgba(30,41,59,0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 16px; }
+	.panel h3 { margin: 0 0 12px; color: #fff; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.12); font-size: 18px; }
+	.field { margin-bottom: 12px; }
+	.field label { display: block; margin-bottom: 6px; color: #cbd5e1; font-size: 13px; }
+	.field input, .field select { width: 100%; box-sizing: border-box; padding: 10px 11px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.22); background: #0f1d2d; color: #fff; font-size: 14px; }
+	.btn { border: none; border-radius: 7px; padding: 9px 14px; font-weight: 500; font-size: 14px; cursor: pointer; background: #3498db; color: #fff; }
+	.btn-danger { background: #dc3545; }
+	.hint { margin-top: 6px; color: #94a3b8; font-size: 12px; }
+	.qr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
+	.qr-card { background: rgba(15, 29, 45, 0.7); border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; padding: 12px; }
+	.qr-card img { width: 150px; height: 150px; display: block; margin: 0 auto 8px; border-radius: 6px; background: #fff; }
+	.qr-title { color: #fff; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+	.qr-sub { color: #cbd5e1; font-size: 12px; }
+	@media (max-width: 980px) { .panel-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wrap">
+	<div class="head">
+		<h2>Department & Machine Setup</h2>
+		<p>Manager-owned setup for departments, machines, and station transfer rules.</p>
+	</div>
+
+	{% if messages %}
+	<ul class="msg-list">
+		{% for message in messages %}
+			<li class="{{ message.tags|default:'info' }}">{{ message }}</li>
+		{% endfor %}
+	</ul>
+	{% endif %}
+
+	<div class="panel-grid">
+		<section class="panel">
+			<h3>Add Multiple Stations + Auto QR</h3>
+			<form method="post" action="{% url 'manage_department' %}">
+				{% csrf_token %}
+				<input type="hidden" name="action" value="add_stations_bulk">
+				<div class="field">
+					<label for="station_department_id">Department</label>
+					<select id="station_department_id" name="station_department_id" required>
+						<option value="">Select department</option>
+						{% for department in departments %}
+							<option value="{{ department.id }}">{{ department.name }} ({{ department.building.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="field">
+					<label for="station_names">Station Names (one per line or comma-separated)</label>
+					<textarea id="station_names" name="station_names" rows="6" style="width:100%; box-sizing:border-box; padding:10px 11px; border-radius:7px; border:1px solid rgba(255,255,255,0.22); background:#0f1d2d; color:#fff; font-size:14px; resize:vertical;" required></textarea>
+					<div class="hint">Example: Station A1, Station A2, Station A3</div>
+				</div>
+				<button class="btn" type="submit">Add Stations & Generate QR</button>
+			</form>
+		</section>
+
+		<section class="panel">
+			<h3>Add Department</h3>
+			<form method="post" action="{% url 'manage_department' %}">
+				{% csrf_token %}
+				<input type="hidden" name="action" value="add_department">
+				<div class="field">
+					<label for="department_name">Department Name</label>
+					<input id="department_name" name="department_name" type="text" required>
+				</div>
+				<div class="field">
+					<label for="building_id">Building</label>
+					<select id="building_id" name="building_id" required>
+						<option value="">Select building</option>
+						{% for building in buildings %}
+							<option value="{{ building.id }}">{{ building.name }}</option>
+						{% endfor %}
+					</select>
+				</div>
+				<button class="btn" type="submit">Add Department</button>
+			</form>
+		</section>
+
+		<section class="panel">
+			<h3>Move Existing Machine</h3>
+			<form method="post" action="{% url 'manage_department' %}">
+				{% csrf_token %}
+				<input type="hidden" name="action" value="move_machine_department">
+				<div class="field">
+					<label for="machine_id">Machine</label>
+					<select id="machine_id" name="machine_id" required>
+						<option value="">Select machine</option>
+						{% for machine in machines %}
+							<option value="{{ machine.id }}">{{ machine.name }} (Current: {{ machine.department.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="field">
+					<label for="target_department_id">Target Department</label>
+					<select id="target_department_id" name="target_department_id" required>
+						<option value="">Select target department</option>
+						{% for department in departments %}
+							<option value="{{ department.id }}">{{ department.name }} ({{ department.building.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="field">
+					<label for="target_station_name">Target Station (Optional)</label>
+					<input id="target_station_name" name="target_station_name" type="text">
+				</div>
+				<button class="btn" type="submit">Move Machine</button>
+			</form>
+		</section>
+
+		<section class="panel">
+			<h3>Create New Machine</h3>
+			<form method="post" action="{% url 'manage_department' %}">
+				{% csrf_token %}
+				<input type="hidden" name="action" value="create_machine">
+				<div class="field">
+					<label for="new_target_department_id">Department</label>
+					<select id="new_target_department_id" name="target_department_id" required>
+						<option value="">Select department</option>
+						{% for department in departments %}
+							<option value="{{ department.id }}">{{ department.name }} ({{ department.building.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="field"><label for="machine_name">Machine Name</label><input id="machine_name" name="machine_name" type="text" required></div>
+				<div class="field"><label for="machine_type">Machine Type</label><input id="machine_type" name="machine_type" type="text" required></div>
+				<div class="field"><label for="machine_location">Machine Location</label><input id="machine_location" name="machine_location" type="text" required></div>
+				<div class="field">
+					<label for="machine_status">Machine Status</label>
+					<select id="machine_status" name="machine_status" required>
+						<option value="Idle">Idle</option>
+						<option value="Running">Running</option>
+						<option value="Maintenance">Maintenance</option>
+						<option value="Down">Down</option>
+					</select>
+				</div>
+				<div class="field"><label for="station_name">Station Name (Optional)</label><input id="station_name" name="station_name" type="text"></div>
+				<button class="btn" type="submit">Create Machine</button>
+			</form>
+		</section>
+
+		<section class="panel">
+			<h3>Delete Department (Safe Transfer)</h3>
+			<form method="post" action="{% url 'manage_department' %}">
+				{% csrf_token %}
+				<input type="hidden" name="action" value="delete_department">
+				<div class="field">
+					<label for="delete_department_id">Department To Delete</label>
+					<select id="delete_department_id" name="delete_department_id" required>
+						<option value="">Select department</option>
+						{% for department in departments %}
+							<option value="{{ department.id }}">{{ department.name }} ({{ department.building.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="field">
+					<label for="transfer_department_id">Transfer Machines/Stations To</label>
+					<select id="transfer_department_id" name="transfer_department_id" required>
+						<option value="">Select target department</option>
+						{% for department in departments %}
+							<option value="{{ department.id }}">{{ department.name }} ({{ department.building.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+				<button class="btn btn-danger" type="submit">Delete Department</button>
+				<div class="hint">Select delete department and transfer department first. Then delete is allowed.</div>
+			</form>
+		</section>
+
+		<section class="panel">
+			<h3>Delete Station</h3>
+			<form method="post" action="{% url 'manage_department' %}">
+				{% csrf_token %}
+				<input type="hidden" name="action" value="delete_station">
+				<div class="field">
+					<label for="station_id">Station</label>
+					<select id="station_id" name="station_id" required>
+						<option value="">Select station</option>
+						{% for station in stations %}
+							<option value="{{ station.id }}">{{ station.name }} ({{ station.department.name }} - {{ station.department.building.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+				<button class="btn btn-danger" type="submit">Delete Station + QR</button>
+				<div class="hint">Deleting a station also deletes the stored QR PDF. Machines linked to that station become unlinked.</div>
+			</form>
+		</section>
+	</div>
+
+	{% if station_qr_results %}
+	<section class="panel" style="margin-top:14px;">
+		<h3>Station QR Codes</h3>
+		<div class="hint">Each station has its own QR code ready for location identification.</div>
+		<div class="qr-grid">
+			{% for row in station_qr_results %}
+			<div class="qr-card">
+				<img src="{{ row.qr_image_url }}" alt="QR for {{ row.station_name }}">
+				<div class="qr-title">{{ row.station_name }}</div>
+				<div class="qr-sub">Department: {{ row.department_name }}</div>
+				<div class="qr-sub">Station ID: {{ row.station_id }}</div>
+				{% if row.qr_pdf_url %}
+				<div class="qr-sub" style="margin-top:6px;"><a href="{{ row.qr_pdf_url }}" target="_blank" style="color:#93c5fd;">Open QR PDF</a></div>
+				{% endif %}
+			</div>
+			{% endfor %}
+		</div>
+	</section>
+	{% endif %}
+</div>
+{% endblock %}

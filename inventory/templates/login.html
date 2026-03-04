@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Inventory Login | ABB Inventory System{% endblock %}
 
@@ -44,6 +45,17 @@
         font-weight: 500;
         padding-bottom: 8px;
         border-bottom: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .login-image-wrap {
+        text-align: center;
+        margin: 10px 0 14px;
+    }
+
+    .login-image {
+        width: 110px;
+        max-width: 100%;
+        height: auto;
     }
 
     .field {
@@ -142,9 +154,7 @@
 
 {% block content %}
 <div class="login-wrap">
-    <div class="login-head">
-        <h1>Inventory Login</h1>
-    </div>
+
 
     {% if messages %}
     <ul class="msg-list">
@@ -154,8 +164,12 @@
     </ul>
     {% endif %}
 
+    <div class="login-image-wrap">
+        <img src="{% static 'image/Abblogo.png' %}" alt="ABB Header" class="login-image">
+    </div>
+
     <div class="login-card">
-        <h2>Inventory Access Login</h2>
+        <h2>Associate Login</h2>
 
         <form method="post" action="{% url 'inventory_login' %}">
             {% csrf_token %}

@@ -1,11 +1,20 @@
 from django.shortcuts import render, redirect
+from django.http import JsonResponse
+from django.core.files.base import ContentFile
 from django.contrib import messages
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.text import slugify
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from .models import Department, UserRequirement, Machine, MachinePart, VendorPart, Part, DepartmentAuthorizedUser, ManagerAccount, AdminSetupKey
+from django.urls import reverse
+import io
+import re
+from PIL import Image
+import qrcode
+from .models import Building, Department, UserRequirement, Machine, MachinePart, VendorPart, Part, DepartmentAuthorizedUser, ManagerAccount, AdminSetupKey, Station, WorkOrderRequest
 from functools import wraps
+
 
 def require_any_login(view_func):
     @wraps(view_func)
@@ -36,12 +45,14 @@ def _build_shared_template_context(request):
     inventory_user = _get_inventory_session_user(request)
     department_names = (inventory_user or {}).get("department_names") or []
     manager_account = _get_manager_session_account(request)
+    can_access_work_station = bool(_get_allowed_department_ids(request))
 
     return {
         "inventory_user": inventory_user,
         "inventory_user_departments_text": ", ".join(department_names),
         "manager_account": manager_account,
         "admin_unlocked": bool(request.session.get("inventory_admin_manager_setup_unlocked", False)),
+        "can_access_work_station": can_access_work_station,
     }
 
 def _render_template(request, template_name, context=None):
@@ -106,6 +117,7 @@ def inventory_login_view(request):
             "department_ids": department_ids,
             "department_names": department_names,
         }
+        request.session.set_expiry(60 * 30)
 
         messages.success(request, f"Logged in as {first_name} {last_name}. Authorized by email: {email}.")
         return redirect("inventory_manage")
@@ -746,6 +758,7 @@ def manager_login_view(request):
             return redirect("manager_login")
 
         request.session["inventory_manager_account_id"] = manager.id
+        request.session.set_expiry(60 * 30)
         messages.success(request, "Manager access unlocked.")
         return redirect("manager_access")
 
@@ -770,6 +783,7 @@ def admin_manager_accounts_view(request):
 
             if admin_key.check_key(admin_code):
                 request.session[admin_session_key] = True
+                request.session.set_expiry(60 * 30)
                 messages.success(request, "Admin manager setup unlocked.")
             else:
                 messages.error(request, "Invalid admin setup code.")
@@ -881,15 +895,171 @@ def admin_manager_accounts_view(request):
             messages.success(request, f"Manager account deleted: {deleted_name} ({deleted_email}).")
             return redirect("manager_admin")
 
+        if action == "admin_create_department":
+            department_name = request.POST.get("department_name", "").strip()
+            building_id = request.POST.get("building_id", "").strip()
+
+            if not department_name or not building_id:
+                messages.error(request, "Department name and building are required.")
+                return redirect("manager_admin")
+
+            try:
+                building = Building.objects.get(id=building_id)
+            except Building.DoesNotExist:
+                messages.error(request, "Selected building was not found.")
+                return redirect("manager_admin")
+
+            if Department.objects.filter(name__iexact=department_name).exists():
+                messages.error(request, "A department with this name already exists.")
+                return redirect("manager_admin")
+
+            department = Department.objects.create(name=department_name, building=building)
+            messages.success(request, f"Department created: {department.name} ({building.name}).")
+            return redirect("manager_admin")
+
+        if action == "admin_move_machine_department":
+            machine_id = request.POST.get("machine_id", "").strip()
+            target_department_id = request.POST.get("target_department_id", "").strip()
+            target_station_name = request.POST.get("target_station_name", "").strip()
+
+            if not machine_id or not target_department_id:
+                messages.error(request, "Machine and target department are required.")
+                return redirect("manager_admin")
+
+            try:
+                machine = Machine.objects.select_related("department", "station").get(id=machine_id)
+            except Machine.DoesNotExist:
+                messages.error(request, "Selected machine was not found.")
+                return redirect("manager_admin")
+
+            try:
+                target_department = Department.objects.get(id=target_department_id)
+            except Department.DoesNotExist:
+                messages.error(request, "Target department was not found.")
+                return redirect("manager_admin")
+
+            target_station = None
+            if target_station_name:
+                target_station, _ = Station.objects.get_or_create(
+                    department=target_department,
+                    name=target_station_name,
+                )
+
+            machine.department = target_department
+            if target_station:
+                machine.station = target_station
+            elif machine.station and machine.station.department_id != target_department.id:
+                machine.station = None
+            machine.save(update_fields=["department", "station"])
+
+            messages.success(request, f"Machine {machine.name} moved to {target_department.name}.")
+            return redirect("manager_admin")
+
+        if action == "admin_create_machine":
+            target_department_id = request.POST.get("target_department_id", "").strip()
+            machine_name = request.POST.get("machine_name", "").strip()
+            machine_type = request.POST.get("machine_type", "").strip()
+            machine_location = request.POST.get("machine_location", "").strip()
+            machine_status = request.POST.get("machine_status", "Idle").strip()
+            station_name = request.POST.get("station_name", "").strip()
+
+            if not target_department_id or not machine_name or not machine_type or not machine_location:
+                messages.error(request, "Department, machine name, type, and location are required.")
+                return redirect("manager_admin")
+
+            try:
+                target_department = Department.objects.get(id=target_department_id)
+            except Department.DoesNotExist:
+                messages.error(request, "Target department was not found.")
+                return redirect("manager_admin")
+
+            if Machine.objects.filter(name__iexact=machine_name).exists():
+                messages.error(request, "A machine with this name already exists.")
+                return redirect("manager_admin")
+
+            station = None
+            if station_name:
+                station, _ = Station.objects.get_or_create(
+                    department=target_department,
+                    name=station_name,
+                )
+
+            machine = Machine.objects.create(
+                name=machine_name,
+                type=machine_type,
+                location=machine_location,
+                status=machine_status if machine_status in {"Running", "Idle", "Maintenance", "Down"} else "Idle",
+                department=target_department,
+                station=station,
+            )
+
+            messages.success(request, f"Machine created: {machine.name} in {target_department.name}.")
+            return redirect("manager_admin")
+
+        if action == "admin_delete_department":
+            delete_department_id = request.POST.get("delete_department_id", "").strip()
+            transfer_department_id = request.POST.get("transfer_department_id", "").strip()
+
+            if not delete_department_id or not transfer_department_id:
+                messages.error(request, "Select the department to delete and the transfer department.")
+                return redirect("manager_admin")
+
+            if delete_department_id == transfer_department_id:
+                messages.error(request, "Transfer department must be different from the department you are deleting.")
+                return redirect("manager_admin")
+
+            try:
+                delete_department = Department.objects.get(id=delete_department_id)
+            except Department.DoesNotExist:
+                messages.error(request, "Department to delete was not found.")
+                return redirect("manager_admin")
+
+            try:
+                transfer_department = Department.objects.get(id=transfer_department_id)
+            except Department.DoesNotExist:
+                messages.error(request, "Transfer department was not found.")
+                return redirect("manager_admin")
+
+            old_station_to_new_station = {}
+            for station in Station.objects.filter(department=delete_department):
+                target_station, _ = Station.objects.get_or_create(
+                    department=transfer_department,
+                    name=station.name,
+                )
+                old_station_to_new_station[station.id] = target_station
+
+            machines_to_move = Machine.objects.filter(department=delete_department).select_related("station")
+            for machine in machines_to_move:
+                machine.department = transfer_department
+                if machine.station_id in old_station_to_new_station:
+                    machine.station = old_station_to_new_station[machine.station_id]
+                elif machine.station and machine.station.department_id != transfer_department.id:
+                    machine.station = None
+                machine.save(update_fields=["department", "station"])
+
+            deleted_department_name = delete_department.name
+            transfer_department_name = transfer_department.name
+            delete_department.delete()
+
+            messages.success(
+                request,
+                f"Department {deleted_department_name} deleted. Machines and stations moved to {transfer_department_name}.",
+            )
+            return redirect("manager_admin")
+
         messages.error(request, "Invalid admin action.")
         return redirect("manager_admin")
 
+    all_buildings = Building.objects.all().order_by("name")
     all_departments = Department.objects.select_related("building").all().order_by("name")
+    all_machines = Machine.objects.select_related("department", "station").all().order_by("name")
     manager_accounts = ManagerAccount.objects.prefetch_related("departments").order_by("first_name", "last_name")
 
     context = {
         "admin_unlocked": is_admin_unlocked,
+        "all_buildings": all_buildings,
         "all_departments": all_departments,
+        "all_machines": all_machines,
         "manager_accounts": manager_accounts,
     }
     return _render_template(request, "admin_manager_accounts.html", context)
@@ -1057,30 +1227,807 @@ def grant_access_view(request):
 
 
 
-# this function is used to provide the inventory user context for templates. it checks the session for the logged-in inventory user and manager account, and returns their information along with any relevant department names and admin access status. this allows the base template to display the appropriate navigation links and user information based on whether an inventory user or manager is logged in, and whether admin setup is unlocked.
 
-def inventory_user_context(request):
-    inventory_user = request.session.get("inventory_user")
-    manager_account = None
-    manager_account_id = request.session.get("inventory_manager_account_id")
-    if manager_account_id:
-        manager_account = ManagerAccount.objects.filter(id=manager_account_id, is_active=True).first()
-    admin_unlocked = bool(request.session.get("inventory_admin_manager_setup_unlocked", False))
+def _save_station_qr_assets(station, qr_payload):
+    station.qr_payload = qr_payload
 
-    if not inventory_user:
+    try:
+        qr_obj = qrcode.QRCode(box_size=10, border=4)
+        qr_obj.add_data(qr_payload)
+        qr_obj.make(fit=True)
+        qr_image = qr_obj.make_image(fill_color="black", back_color="white").convert("RGB")
+
+        png_buffer = io.BytesIO()
+        qr_image.save(png_buffer, format="PNG")
+        png_buffer.seek(0)
+
+        pdf_buffer = io.BytesIO()
+        qr_image.save(pdf_buffer, format="PDF")
+        pdf_buffer.seek(0)
+
+        if station.qr_png:
+            station.qr_png.delete(save=False)
+        if station.qr_pdf:
+            station.qr_pdf.delete(save=False)
+
+        safe_station_name = slugify(station.name) or f"station-{station.id}"
+        png_name = f"station_qr_{station.department_id}_{station.id}_{safe_station_name}.png"
+        pdf_name = f"station_qr_{station.department_id}_{station.id}_{safe_station_name}.pdf"
+
+        station.qr_png.save(png_name, ContentFile(png_buffer.read()), save=False)
+        station.qr_pdf.save(pdf_name, ContentFile(pdf_buffer.read()), save=False)
+        station.save()
+
+        station.qr_image_url = station.qr_png.url if station.qr_png else ""
+        station.save(update_fields=["qr_payload", "qr_image_url", "qr_png", "qr_pdf"])
+    except Exception:
+        station.save(update_fields=["qr_payload"])
+
+
+@require_any_login
+def create_qrcode(request):
+    """Create/get a station and return QR data instantly for that station."""
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "message": "POST request required."}, status=405)
+
+    station_name = request.POST.get("station_name", "").strip() or request.POST.get("station_location", "").strip()
+    station_department_id = request.POST.get("station_department_id", "").strip() or request.POST.get("department_id", "").strip()
+
+    if not station_name or not station_department_id:
+        return JsonResponse(
+            {"ok": False, "message": "station_name and station_department_id are required."},
+            status=400,
+        )
+
+    try:
+        department = Department.objects.get(id=station_department_id)
+    except Department.DoesNotExist:
+        return JsonResponse({"ok": False, "message": "Department not found."}, status=404)
+
+    station, created = Station.objects.get_or_create(
+        department=department,
+        name=station_name,
+    )
+
+    qr_data = _build_station_qr_data(request, station)
+    _save_station_qr_assets(station, qr_data["qr_payload"])
+    qr_data = _build_station_qr_data(request, station)
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "created": created,
+            "station": {
+                "id": station.id,
+                "name": station.name,
+                "department_id": department.id,
+                "department_name": department.name,
+            },
+            "qr_payload": qr_data["qr_payload"],
+            "qr_image_url": qr_data["qr_image_url"],
+            "qr_pdf_url": qr_data["qr_pdf_url"],
+        }
+    )
+
+
+def _build_station_qr_data(request, station):
+    station_page_url = request.build_absolute_uri(f"{reverse('work_station')}?station_id={station.id}&scan=1")
+    qr_payload = (
+        f"Station:{station.name}|Department:{station.department.name}|StationID:{station.id}|URL:{station_page_url}"
+    )
+    qr_image_url = station.qr_image_url or (station.qr_png.url if station.qr_png else "")
+    return {
+        "station_id": station.id,
+        "station_name": station.name,
+        "department_id": station.department_id,
+        "department_name": station.department.name,
+        "qr_payload": qr_payload,
+        "qr_image_url": qr_image_url,
+        "qr_pdf_url": station.qr_pdf.url if station.qr_pdf else "",
+    }
+
+
+def _get_actor_identity(request):
+    inventory_user = _get_inventory_session_user(request)
+    if inventory_user:
         return {
-            "inventory_user": None,
-            "inventory_user_departments_text": "",
-            "manager_account": manager_account,
-            "admin_unlocked": admin_unlocked,
+            "first_name": inventory_user.get("first_name", ""),
+            "last_name": inventory_user.get("last_name", ""),
+            "email": inventory_user.get("email", ""),
         }
 
-    department_names = inventory_user.get("department_names") or []
-    departments_text = ", ".join(department_names)
+    manager_account = _get_manager_session_account(request)
+    if manager_account:
+        return {
+            "first_name": manager_account.first_name,
+            "last_name": manager_account.last_name,
+            "email": manager_account.email,
+        }
 
-    return {
-        "inventory_user": inventory_user,
-        "inventory_user_departments_text": departments_text,
-        "manager_account": manager_account,
-        "admin_unlocked": admin_unlocked,
+    return {"first_name": "", "last_name": "", "email": ""}
+
+
+def _get_allowed_department_ids(request):
+    allowed_department_ids = set()
+
+    inventory_user = _get_inventory_session_user(request) or {}
+    inventory_department_ids = inventory_user.get("department_ids") or []
+    for department_id in inventory_department_ids:
+        try:
+            allowed_department_ids.add(int(department_id))
+        except (TypeError, ValueError):
+            continue
+
+    return allowed_department_ids
+
+
+def work_station_view(request):
+    station_id = request.GET.get("station_id", "").strip()
+    department_id = request.GET.get("department_id", "").strip()
+    scan_flag = request.GET.get("scan", "").strip().lower() in {"1", "true", "yes"}
+    is_logged_in = bool(request.session.get("inventory_user") or request.session.get("inventory_manager_account_id"))
+    is_inventory_user = bool(request.session.get("inventory_user"))
+    is_manager_only = bool(request.session.get("inventory_manager_account_id")) and not is_inventory_user
+
+    selected_station = None
+    selected_department = None
+    machine_options = Machine.objects.none()
+    station_latest_request = None
+    just_completed = False
+    allowed_department_ids = _get_allowed_department_ids(request) if is_inventory_user else set()
+
+    if not is_logged_in and not (scan_flag and station_id):
+        messages.error(request, "Please login first.")
+        return redirect("inventory_login")
+
+    if is_manager_only:
+        messages.error(request, "Managers cannot access Work Station. This page is for department users.")
+        return redirect("manager_access")
+
+    if is_inventory_user and not allowed_department_ids:
+        messages.error(request, "No department access assigned. Ask your manager for access.")
+        context = {
+            "departments": Department.objects.none(),
+            "stations": Station.objects.none(),
+            "machine_options": Machine.objects.none(),
+            "selected_station": None,
+            "selected_department": None,
+            "work_orders": WorkOrderRequest.objects.none(),
+            "station_latest_request": None,
+            "active_alerts": [],
+            "just_completed": False,
+            "is_scanner_view": False,
+        }
+        return _render_template(request, "Work_station.html", context)
+
+    if station_id:
+        station_queryset = Station.objects.select_related("department", "department__building").filter(id=station_id)
+        if is_inventory_user:
+            station_queryset = station_queryset.filter(department_id__in=allowed_department_ids)
+        selected_station = station_queryset.first()
+        if selected_station:
+            selected_department = selected_station.department
+            machine_options = Machine.objects.filter(department=selected_department).order_by("name")
+            department_id = str(selected_department.id)
+
+            if scan_flag:
+                active_request = WorkOrderRequest.objects.filter(
+                    station=selected_station,
+                    status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING],
+                ).order_by("-scanned_at").first()
+                if active_request and active_request.status == WorkOrderRequest.STATUS_COMING:
+                    actor = _get_actor_identity(request)
+                    now = timezone.now()
+                    active_request.status = WorkOrderRequest.STATUS_COMPLETED
+                    active_request.completed_at = now
+                    active_request.completed_by_first_name = actor["first_name"] or "Operator"
+                    active_request.completed_by_last_name = actor["last_name"] or "Scanner"
+                    active_request.completed_by_email = actor["email"]
+                    active_request.save(
+                        update_fields=[
+                            "status",
+                            "completed_at",
+                            "completed_by_first_name",
+                            "completed_by_last_name",
+                            "completed_by_email",
+                        ]
+                    )
+                    station_latest_request = active_request
+                    just_completed = True
+                    messages.success(request, f"Work completed recorded for {selected_station.name}.")
+                elif not active_request:
+                    station_latest_request = WorkOrderRequest.objects.create(
+                        station=selected_station,
+                        department=selected_department,
+                        message="Station needs help.",
+                        priority=WorkOrderRequest.PRIORITY_MEDIUM,
+                        status=WorkOrderRequest.STATUS_NEW,
+                    )
+                    messages.success(request, f"Call sent from {selected_station.name}. Engineering has been notified.")
+                else:
+                    station_latest_request = active_request
+        else:
+            if is_inventory_user:
+                messages.error(request, "You are not allowed to access this station.")
+            else:
+                messages.error(request, "Station QR code is invalid.")
+
+    if is_inventory_user and not selected_department and department_id:
+        selected_department = (
+            Department.objects.select_related("building")
+            .filter(id=department_id, id__in=allowed_department_ids)
+            .first()
+        )
+        if selected_department:
+            machine_options = Machine.objects.filter(department=selected_department).order_by("name")
+        else:
+            messages.error(request, "You are not allowed to view this department queue.")
+
+    if is_inventory_user:
+        departments = Department.objects.select_related("building").filter(id__in=allowed_department_ids).order_by("name")
+        stations = (
+            Station.objects.select_related("department", "department__building")
+            .filter(department_id__in=allowed_department_ids)
+            .order_by("department__name", "name")
+        )
+
+        work_orders = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(
+            department_id__in=allowed_department_ids
+        )
+        if selected_department:
+            work_orders = work_orders.filter(department=selected_department)
+
+        work_orders = work_orders.order_by("priority", "-scanned_at")
+    else:
+        departments = Department.objects.none()
+        stations = Station.objects.none()
+        work_orders = WorkOrderRequest.objects.none()
+
+    if selected_station and not station_latest_request:
+        station_latest_request = (
+            WorkOrderRequest.objects.filter(station=selected_station)
+            .select_related("department", "station", "machine")
+            .order_by("-scanned_at")
+            .first()
+        )
+
+    if is_inventory_user:
+        active_alerts = list(
+            WorkOrderRequest.objects.select_related("department", "station", "machine")
+            .filter(status=WorkOrderRequest.STATUS_NEW, department_id__in=allowed_department_ids)
+            .order_by("priority", "-scanned_at")
+        )
+    else:
+        active_alerts = []
+
+    context = {
+        "departments": departments,
+        "stations": stations,
+        "machine_options": machine_options,
+        "selected_station": selected_station,
+        "selected_department": selected_department,
+        "work_orders": work_orders,
+        "station_latest_request": station_latest_request,
+        "active_alerts": active_alerts,
+        "just_completed": just_completed,
+        "is_scanner_view": bool(scan_flag and selected_station and not is_logged_in),
     }
+    return _render_template(request, "Work_station.html", context)
+
+
+@require_any_login
+def work_station_submit_request(request):
+    if request.method != "POST":
+        return redirect("work_station")
+
+    if not request.session.get("inventory_user"):
+        messages.error(request, "Only authorized department users can submit workstation requests.")
+        return redirect("inventory_login")
+
+    station_id = request.POST.get("station_id", "").strip()
+    machine_id = request.POST.get("machine_id", "").strip()
+    message = request.POST.get("message", "").strip()
+    priority_value = request.POST.get("priority", "2").strip()
+
+    if not station_id:
+        messages.error(request, "Station is required for work order request.")
+        return redirect("work_station")
+
+    allowed_department_ids = _get_allowed_department_ids(request)
+    if not allowed_department_ids:
+        messages.error(request, "No department access assigned. Ask your manager for access.")
+        return redirect("work_station")
+
+    try:
+        station = Station.objects.select_related("department").get(id=station_id, department_id__in=allowed_department_ids)
+    except Station.DoesNotExist:
+        messages.error(request, "Selected station was not found or access is not allowed.")
+        return redirect("work_station")
+
+    machine = None
+    if machine_id:
+        machine = Machine.objects.filter(id=machine_id, department=station.department).first()
+        if not machine:
+            messages.error(request, "Selected machine is not in the station department.")
+            return redirect(f"{reverse('work_station')}?station_id={station.id}")
+
+    try:
+        priority = int(priority_value)
+    except ValueError:
+        priority = WorkOrderRequest.PRIORITY_MEDIUM
+    if priority not in {WorkOrderRequest.PRIORITY_HIGH, WorkOrderRequest.PRIORITY_MEDIUM, WorkOrderRequest.PRIORITY_LOW}:
+        priority = WorkOrderRequest.PRIORITY_MEDIUM
+
+    existing_active_request = WorkOrderRequest.objects.filter(
+        station=station,
+        status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING],
+    ).order_by("-scanned_at").first()
+    if existing_active_request:
+        messages.info(request, f"An active request already exists for {station.name}.")
+        return redirect(f"{reverse('work_station')}?station_id={station.id}")
+
+    work_order = WorkOrderRequest.objects.create(
+        station=station,
+        department=station.department,
+        machine=machine,
+        message=message,
+        priority=priority,
+        status=WorkOrderRequest.STATUS_NEW,
+    )
+
+    messages.success(request, f"Request created for {station.name}. Ticket #{work_order.id} submitted.")
+    return redirect(f"{reverse('work_station')}?station_id={station.id}")
+
+
+@require_any_login
+def work_station_accept_request(request):
+    if request.method != "POST":
+        return redirect("work_station")
+
+    if not request.session.get("inventory_user"):
+        messages.error(request, "Only authorized department users can accept workstation requests.")
+        return redirect("inventory_login")
+
+    work_order_id = request.POST.get("work_order_id", "").strip()
+    station_id = request.POST.get("station_id", "").strip()
+    department_id = request.POST.get("department_id", "").strip()
+    if not work_order_id:
+        messages.error(request, "Work order ID is required.")
+        return redirect("work_station")
+
+    work_order = WorkOrderRequest.objects.select_related("department").filter(id=work_order_id).first()
+    if not work_order:
+        messages.error(request, "Work order not found.")
+        return redirect("work_station")
+
+    allowed_department_ids = _get_allowed_department_ids(request)
+    if work_order.department_id not in allowed_department_ids:
+        messages.error(request, "You are not allowed to access this department request.")
+        return redirect("work_station")
+
+    if work_order.status != WorkOrderRequest.STATUS_NEW:
+        messages.info(request, "Only NEW requests can be accepted.")
+        if department_id:
+            return redirect(f"{reverse('work_station')}?department_id={department_id}")
+        return redirect("work_station")
+
+    actor = _get_actor_identity(request)
+
+    now = timezone.now()
+    if not work_order.accessed_at:
+        work_order.accessed_at = now
+    if not work_order.responded_at:
+        work_order.responded_at = now
+    work_order.accepted_at = now
+    work_order.status = WorkOrderRequest.STATUS_COMING
+    work_order.technician_first_name = actor["first_name"]
+    work_order.technician_last_name = actor["last_name"]
+    work_order.technician_email = actor["email"]
+    work_order.save(update_fields=[
+        "accessed_at",
+        "responded_at",
+        "accepted_at",
+        "status",
+        "technician_first_name",
+        "technician_last_name",
+        "technician_email",
+    ])
+
+    messages.success(request, f"Work order #{work_order.id} accepted. Status set to COMING.")
+    if department_id:
+        return redirect(f"{reverse('work_station')}?department_id={department_id}")
+    if station_id:
+        return redirect(f"{reverse('work_station')}?station_id={station_id}")
+    return redirect(f"{reverse('work_station')}?department_id={work_order.department_id}")
+
+
+@require_any_login
+def work_station_cancel_request(request):
+    if request.method != "POST":
+        return redirect("work_station")
+
+    if not request.session.get("inventory_user"):
+        messages.error(request, "Only authorized department users can cancel workstation requests.")
+        return redirect("inventory_login")
+
+    station_id = request.POST.get("station_id", "").strip()
+    if not station_id:
+        messages.error(request, "Station is required to cancel call.")
+        return redirect("work_station")
+
+    allowed_department_ids = _get_allowed_department_ids(request)
+    station = (
+        Station.objects.select_related("department")
+        .filter(id=station_id, department_id__in=allowed_department_ids)
+        .first()
+    )
+    if not station:
+        messages.error(request, "You are not allowed to cancel this station call.")
+        return redirect("work_station")
+
+    work_order = (
+        WorkOrderRequest.objects.filter(
+            station=station,
+            status=WorkOrderRequest.STATUS_NEW,
+        )
+        .order_by("-scanned_at")
+        .first()
+    )
+
+    if not work_order:
+        messages.info(request, "No pending NEW call found to cancel.")
+        return redirect(f"{reverse('work_station')}?station_id={station_id}")
+
+    work_order.status = WorkOrderRequest.STATUS_CANCELLED
+    work_order.cancelled_at = timezone.now()
+    work_order.save(update_fields=["status", "cancelled_at"])
+    messages.success(request, f"Call cancelled for station {work_order.station.name}.")
+    return redirect(f"{reverse('work_station')}?station_id={station_id}")
+
+
+def work_station_scan_call(request):
+    if request.method != "POST":
+        return redirect("work_station")
+
+    station_id = request.POST.get("station_id", "").strip()
+    if not station_id:
+        messages.error(request, "Station is required.")
+        return redirect("work_station")
+
+    station = Station.objects.select_related("department").filter(id=station_id).first()
+    if not station:
+        messages.error(request, "Station was not found.")
+        return redirect("work_station")
+
+    existing_active_request = WorkOrderRequest.objects.filter(
+        station=station,
+        status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING],
+    ).order_by("-scanned_at").first()
+    if existing_active_request:
+        messages.info(request, "Call already active for this station.")
+        return redirect(f"{reverse('work_station')}?station_id={station.id}&scan=1")
+
+    WorkOrderRequest.objects.create(
+        station=station,
+        department=station.department,
+        message="Station needs help.",
+        priority=WorkOrderRequest.PRIORITY_MEDIUM,
+        status=WorkOrderRequest.STATUS_NEW,
+    )
+
+    messages.success(request, f"Call sent from {station.name}.")
+    return redirect(f"{reverse('work_station')}?station_id={station.id}&scan=1")
+
+
+def work_station_scan_cancel(request):
+    if request.method != "POST":
+        return redirect("work_station")
+
+    station_id = request.POST.get("station_id", "").strip()
+    if not station_id:
+        messages.error(request, "Station is required.")
+        return redirect("work_station")
+
+    work_order = (
+        WorkOrderRequest.objects.filter(
+            station_id=station_id,
+            status=WorkOrderRequest.STATUS_NEW,
+        )
+        .order_by("-scanned_at")
+        .first()
+    )
+    if not work_order:
+        messages.info(request, "No pending NEW call found to cancel.")
+        return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1")
+
+    work_order.status = WorkOrderRequest.STATUS_CANCELLED
+    work_order.cancelled_at = timezone.now()
+    work_order.save(update_fields=["status", "cancelled_at"])
+    messages.success(request, f"Call cancelled for station {work_order.station.name}.")
+    return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1")
+
+
+
+# this function is for adding and managingind dp
+@require_any_login
+def manage_department(request):
+    manager_account = _get_manager_session_account(request)
+    if not manager_account:
+        messages.error(request, "Please login as manager first.")
+        return redirect("manager_login")
+
+    manager_department_ids = set(manager_account.departments.values_list("id", flat=True))
+
+    if request.method == "POST":
+        action = request.POST.get("action", "").strip()
+
+        if action == "add_department":
+            building_id = request.POST.get("building_id", "").strip()
+            department_name = request.POST.get("department_name", "").strip()
+
+            if not building_id or not department_name:
+                messages.error(request, "Building and department name are required.")
+                return redirect("manage_department")
+
+            try:
+                building = Building.objects.get(id=building_id)
+            except Building.DoesNotExist:
+                messages.error(request, "Selected building was not found.")
+                return redirect("manage_department")
+
+            if Department.objects.filter(name__iexact=department_name).exists():
+                messages.error(request, "A department with this name already exists.")
+                return redirect("manage_department")
+
+            department = Department.objects.create(name=department_name, building=building)
+            manager_account.departments.add(department)
+            messages.success(request, f"Department '{department.name}' added to building '{building.name}'.")
+            return redirect("manage_department")
+
+        if action == "move_machine_department":
+            machine_id = request.POST.get("machine_id", "").strip()
+            target_department_id = request.POST.get("target_department_id", "").strip()
+            target_station_name = request.POST.get("target_station_name", "").strip()
+
+            if not machine_id or not target_department_id:
+                messages.error(request, "Machine and target department are required.")
+                return redirect("manage_department")
+
+            try:
+                machine = Machine.objects.select_related("department", "station").get(id=machine_id)
+            except Machine.DoesNotExist:
+                messages.error(request, "Selected machine was not found.")
+                return redirect("manage_department")
+
+            try:
+                target_department = Department.objects.get(id=target_department_id)
+            except Department.DoesNotExist:
+                messages.error(request, "Target department was not found.")
+                return redirect("manage_department")
+
+            if machine.department_id not in manager_department_ids or target_department.id not in manager_department_ids:
+                messages.error(request, "You can only move machines between your assigned departments.")
+                return redirect("manage_department")
+
+            target_station = None
+            if target_station_name:
+                target_station, _ = Station.objects.get_or_create(
+                    department=target_department,
+                    name=target_station_name,
+                )
+
+            machine.department = target_department
+            if target_station:
+                machine.station = target_station
+            elif machine.station and machine.station.department_id != target_department.id:
+                machine.station = None
+            machine.save(update_fields=["department", "station"])
+
+            messages.success(request, f"Machine {machine.name} moved to {target_department.name}.")
+            return redirect("manage_department")
+
+        if action == "create_machine":
+            target_department_id = request.POST.get("target_department_id", "").strip()
+            machine_name = request.POST.get("machine_name", "").strip()
+            machine_type = request.POST.get("machine_type", "").strip()
+            machine_location = request.POST.get("machine_location", "").strip()
+            machine_status = request.POST.get("machine_status", "Idle").strip()
+            station_name = request.POST.get("station_name", "").strip()
+
+            if not target_department_id or not machine_name or not machine_type or not machine_location:
+                messages.error(request, "Department, machine name, type, and location are required.")
+                return redirect("manage_department")
+
+            try:
+                target_department = Department.objects.get(id=target_department_id)
+            except Department.DoesNotExist:
+                messages.error(request, "Target department was not found.")
+                return redirect("manage_department")
+
+            if target_department.id not in manager_department_ids:
+                messages.error(request, "You can only create machines in your assigned departments.")
+                return redirect("manage_department")
+
+            if Machine.objects.filter(name__iexact=machine_name).exists():
+                messages.error(request, "A machine with this name already exists.")
+                return redirect("manage_department")
+
+            station = None
+            station_created = False
+            if station_name:
+                station, station_created = Station.objects.get_or_create(
+                    department=target_department,
+                    name=station_name,
+                )
+
+            machine = Machine.objects.create(
+                name=machine_name,
+                type=machine_type,
+                location=machine_location,
+                status=machine_status if machine_status in {"Running", "Idle", "Maintenance", "Down"} else "Idle",
+                department=target_department,
+                station=station,
+            )
+
+            if station and station_created:
+                qr_data = _build_station_qr_data(request, station)
+                _save_station_qr_assets(station, qr_data["qr_payload"])
+                request.session["manage_department_station_qr_results"] = [_build_station_qr_data(request, station)]
+
+            messages.success(request, f"Machine created: {machine.name} in {target_department.name}.")
+            return redirect("manage_department")
+
+        if action == "add_stations_bulk":
+            station_department_id = request.POST.get("station_department_id", "").strip()
+            station_names_raw = request.POST.get("station_names", "")
+
+            if not station_department_id or not station_names_raw.strip():
+                messages.error(request, "Department and station names are required.")
+                return redirect("manage_department")
+
+            try:
+                department = Department.objects.get(id=station_department_id)
+            except Department.DoesNotExist:
+                messages.error(request, "Selected department was not found.")
+                return redirect("manage_department")
+
+            if department.id not in manager_department_ids:
+                messages.error(request, "You can only add stations to your assigned departments.")
+                return redirect("manage_department")
+
+            parsed_names = [name.strip() for name in re.split(r"[\n,;]+", station_names_raw) if name.strip()]
+            if not parsed_names:
+                messages.error(request, "Provide at least one valid station name.")
+                return redirect("manage_department")
+
+            unique_names = []
+            seen_lower = set()
+            for name in parsed_names:
+                lowered = name.lower()
+                if lowered in seen_lower:
+                    continue
+                seen_lower.add(lowered)
+                unique_names.append(name)
+
+            qr_results = []
+            created_count = 0
+            existing_count = 0
+
+            for station_name in unique_names:
+                station, created = Station.objects.get_or_create(
+                    department=department,
+                    name=station_name,
+                )
+                if created:
+                    created_count += 1
+                else:
+                    existing_count += 1
+                qr_data = _build_station_qr_data(request, station)
+                _save_station_qr_assets(station, qr_data["qr_payload"])
+                qr_results.append(_build_station_qr_data(request, station))
+
+            request.session["manage_department_station_qr_results"] = qr_results
+            messages.success(
+                request,
+                f"Stations processed for {department.name}. Created: {created_count}. Existing: {existing_count}. QR codes are ready below.",
+            )
+            return redirect("manage_department")
+
+        if action == "delete_station":
+            station_id = request.POST.get("station_id", "").strip()
+            if not station_id:
+                messages.error(request, "Select a station to delete.")
+                return redirect("manage_department")
+
+            try:
+                station = Station.objects.select_related("department").get(id=station_id)
+            except Station.DoesNotExist:
+                messages.error(request, "Selected station was not found.")
+                return redirect("manage_department")
+
+            if station.department_id not in manager_department_ids:
+                messages.error(request, "You can only delete stations in your assigned departments.")
+                return redirect("manage_department")
+
+            linked_machine_count = Machine.objects.filter(station=station).count()
+            station_name = station.name
+            station_department = station.department.name
+
+            if station.qr_pdf:
+                station.qr_pdf.delete(save=False)
+
+            station.delete()
+
+            messages.success(
+                request,
+                f"Station '{station_name}' deleted from {station_department}. Removed stored QR PDF. Machines unlinked: {linked_machine_count}.",
+            )
+            return redirect("manage_department")
+
+        if action == "delete_department":
+            delete_department_id = request.POST.get("delete_department_id", "").strip()
+            transfer_department_id = request.POST.get("transfer_department_id", "").strip()
+
+            if not delete_department_id or not transfer_department_id:
+                messages.error(request, "Select the department to delete and the transfer department.")
+                return redirect("manage_department")
+
+            if delete_department_id == transfer_department_id:
+                messages.error(request, "Transfer department must be different.")
+                return redirect("manage_department")
+
+            try:
+                delete_department = Department.objects.get(id=delete_department_id)
+                transfer_department = Department.objects.get(id=transfer_department_id)
+            except Department.DoesNotExist:
+                messages.error(request, "Department selection is invalid.")
+                return redirect("manage_department")
+
+            if delete_department.id not in manager_department_ids or transfer_department.id not in manager_department_ids:
+                messages.error(request, "You can only delete/transfer between your assigned departments.")
+                return redirect("manage_department")
+
+            old_station_to_new_station = {}
+            for station in Station.objects.filter(department=delete_department):
+                target_station, _ = Station.objects.get_or_create(
+                    department=transfer_department,
+                    name=station.name,
+                )
+                old_station_to_new_station[station.id] = target_station
+
+            machines_to_move = Machine.objects.filter(department=delete_department).select_related("station")
+            for machine in machines_to_move:
+                machine.department = transfer_department
+                if machine.station_id in old_station_to_new_station:
+                    machine.station = old_station_to_new_station[machine.station_id]
+                elif machine.station and machine.station.department_id != transfer_department.id:
+                    machine.station = None
+                machine.save(update_fields=["department", "station"])
+
+            deleted_name = delete_department.name
+            delete_department.delete()
+            manager_account.departments.remove(delete_department)
+
+            messages.success(
+                request,
+                f"Department '{deleted_name}' deleted. Machines/stations moved to '{transfer_department.name}'.",
+            )
+            return redirect("manage_department")
+
+        messages.error(request, "Invalid action.")
+        return redirect("manage_department")
+
+    buildings = Building.objects.all().order_by("name")
+    departments = Department.objects.select_related("building").filter(id__in=manager_department_ids).order_by("name")
+    machines = Machine.objects.select_related("department", "station").filter(department_id__in=manager_department_ids).order_by("name")
+    stations = Station.objects.select_related("department", "department__building").filter(department_id__in=manager_department_ids).order_by("department__name", "name")
+    station_qr_results = request.session.pop("manage_department_station_qr_results", [])
+    context = {
+        "buildings": buildings,
+        "departments": departments,
+        "machines": machines,
+        "stations": stations,
+        "manager_account": manager_account,
+        "station_qr_results": station_qr_results,
+    }
+    return _render_template(request, "add_department.html", context)

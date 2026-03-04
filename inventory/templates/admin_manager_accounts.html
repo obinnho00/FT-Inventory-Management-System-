@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Admin Manager Setup | ABB Inventory System{% endblock %}
 
@@ -66,6 +67,8 @@
     .links a:hover { text-decoration: underline; }
     .action-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .action-row form { margin: 0; }
+    .login-image-wrap { text-align: center; margin: 10px 0 14px; }
+    .login-image { width: 110px; max-width: 100%; height: auto; }
     @media (max-width: 980px) { .panel-grid { grid-template-columns: 1fr; max-width: 100%; } }
 </style>
 {% endblock %}
@@ -73,8 +76,6 @@
 {% block content %}
 <div class="wrap">
     <div class="head">
-        <h2>Admin Config</h2>
-        <p>Create manager account</p>
     </div>
 
     {% if messages %}
@@ -85,10 +86,14 @@
     </ul>
     {% endif %}
 
+    <div class="login-image-wrap">
+        <img src="{% static 'image/Abblogo.png' %}" alt="ABB Header" class="login-image">
+    </div>
+
     {% if not admin_unlocked %}
     <div class="panel-grid" style="max-width:760px; grid-template-columns:1fr;">
         <section class="panel">
-            <h3>Admin Unlock</h3>
+            <h3>Admin</h3>
             <form method="post" action="{% url 'manager_admin' %}">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="admin_unlock">

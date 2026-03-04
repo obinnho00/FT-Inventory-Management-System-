@@ -139,6 +139,30 @@ class AdminSetupKey(models.Model):
 # MACHINE STRUCTURE
 # ==========================================
 
+class Station(models.Model):
+    """Stations that belong to a department and can host one or more machines."""
+
+    name = models.CharField(max_length=100)
+
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.CASCADE,
+        related_name="stations"
+    )
+
+    qr_payload = models.TextField(blank=True)
+    qr_image_url = models.URLField(blank=True)
+    qr_png = models.FileField(upload_to="station_qr_images/", null=True, blank=True)
+    qr_pdf = models.FileField(upload_to="station_qr_pdfs/", null=True, blank=True)
+
+    class Meta:
+        db_table = "inventory_station"
+        ordering = ["department__name", "name"]
+        unique_together = ("department", "name")
+
+    def __str__(self):
+        return f"{self.name} ({self.department.name})"
+
 class Machine(models.Model):
     """Table for machines/robots that consume parts and belong to a department."""
 
@@ -170,6 +194,14 @@ class Machine(models.Model):
         upload_to="machine_images/",
         blank=True,
         null=True
+    )
+
+    station = models.ForeignKey(
+        Station,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="machines"
     )
 
     department = models.ForeignKey(
@@ -362,6 +394,102 @@ class VendorPart(models.Model):
 
     def __str__(self):
         return f"{self.part.model_number} - {self.vendor.name}"
+
+# ==========================================
+# Engineering Work Order Notification Screen
+# ==========================================
+class WorkOrderNotification(models.Model):
+    """Table for work order notifications"""
+
+    machine = models.ForeignKey(
+        Machine,
+        on_delete=models.CASCADE,
+        related_name="work_order_notifications"
+    )
+
+    notification_message = models.TextField(blank=True)
+
+    date_reported = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "inventory_work_order_notification"
+        ordering = ["-date_reported"]
+
+    def __str__(self):
+        return f"{self.machine.name} - {self.date_reported.date()}"
+
+
+class WorkOrderRequest(models.Model):
+    """Work order created from station QR scan and tracked through response lifecycle."""
+
+    STATUS_NEW = "NEW"
+    STATUS_COMING = "COMING"
+    STATUS_COMPLETED = "COMPLETED"
+    STATUS_CANCELLED = "CANCELLED"
+
+    STATUS_CHOICES = [
+        (STATUS_NEW, "New"),
+        (STATUS_COMING, "Coming"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    PRIORITY_HIGH = 1
+    PRIORITY_MEDIUM = 2
+    PRIORITY_LOW = 3
+
+    PRIORITY_CHOICES = [
+        (PRIORITY_HIGH, "High"),
+        (PRIORITY_MEDIUM, "Medium"),
+        (PRIORITY_LOW, "Low"),
+    ]
+
+    station = models.ForeignKey(
+        Station,
+        on_delete=models.CASCADE,
+        related_name="work_orders",
+    )
+
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.CASCADE,
+        related_name="work_orders",
+    )
+
+    machine = models.ForeignKey(
+        Machine,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="work_orders",
+    )
+
+    message = models.TextField(blank=True)
+    priority = models.PositiveSmallIntegerField(choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_NEW)
+
+    technician_first_name = models.CharField(max_length=100, blank=True)
+    technician_last_name = models.CharField(max_length=100, blank=True)
+    technician_email = models.EmailField(blank=True)
+
+    completed_by_first_name = models.CharField(max_length=100, blank=True)
+    completed_by_last_name = models.CharField(max_length=100, blank=True)
+    completed_by_email = models.EmailField(blank=True)
+
+    scanned_at = models.DateTimeField(auto_now_add=True)
+    accessed_at = models.DateTimeField(null=True, blank=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "inventory_work_order_request"
+        ordering = ["priority", "-scanned_at"]
+
+    def __str__(self):
+        machine_name = self.machine.name if self.machine else "No Machine"
+        return f"{self.department.name} | {self.station.name} | {machine_name} | {self.get_status_display()}"
 
 
 # ==========================================
