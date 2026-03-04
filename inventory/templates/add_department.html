@@ -154,8 +154,48 @@
 						<option value="Down">Down</option>
 					</select>
 				</div>
-				<div class="field"><label for="station_name">Station Name (Optional)</label><input id="station_name" name="station_name" type="text"></div>
+				<div class="field">
+					<label for="station_id">Link to Existing Station (Optional)</label>
+					<select id="station_id" name="station_id">
+						<option value="">No station link</option>
+						{% for station in stations %}
+							<option value="{{ station.id }}">{{ station.name }} ({{ station.department.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="field"><label for="station_name">Or Create New Station Name (Optional)</label><input id="station_name" name="station_name" type="text"></div>
 				<button class="btn" type="submit">Create Machine</button>
+			</form>
+		</section>
+
+		<section class="panel">
+			<h3>Link Existing Machine to Station</h3>
+			<form method="post" action="{% url 'manage_department' %}">
+				{% csrf_token %}
+				<input type="hidden" name="action" value="assign_machine_station">
+				<div class="field">
+					<label for="assign_machine_id">Machine</label>
+					<select id="assign_machine_id" name="machine_id" required>
+						<option value="">Select machine</option>
+						{% for machine in machines %}
+							<option value="{{ machine.id }}">{{ machine.name }} ({{ machine.department.name }}){% if machine.station %} - Current: {{ machine.station.name }}{% else %} - Not linked{% endif %}</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="field">
+					<label for="assign_station_id">Existing Station (Same Department)</label>
+					<select id="assign_station_id" name="assign_station_id">
+						<option value="">Select station</option>
+						{% for station in stations %}
+							<option value="{{ station.id }}">{{ station.name }} ({{ station.department.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="field">
+					<label for="assign_station_name">Or New Station Name (Optional)</label>
+					<input id="assign_station_name" name="assign_station_name" type="text" placeholder="Create station in machine department">
+				</div>
+				<button class="btn" type="submit">Link Machine to Station</button>
 			</form>
 		</section>
 
@@ -228,45 +268,137 @@
 	{% endif %}
 
 	<section class="panel" style="margin-top:14px;">
-		<h3>QR Code Library</h3>
-		<form method="get" action="{% url 'manage_department' %}">
-			<div class="field">
-				<label for="qr_department_id">Select Department</label>
-				<select id="qr_department_id" name="qr_department_id">
-					<option value="">All assigned departments</option>
-					{% for department in departments %}
-						<option value="{{ department.id }}" {% if selected_qr_department_id == department.id|stringformat:'s' %}selected{% endif %}>
-							{{ department.name }} ({{ department.building.name }})
-						</option>
-					{% endfor %}
-				</select>
-			</div>
-			<button class="btn" type="submit">Show QR Codes</button>
-		</form>
+		<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;">
+			<h3 style="margin:0; border-bottom:none; padding-bottom:0;">QR Code Library</h3>
+			<button type="button" class="btn" id="toggleQrLibraryBtn">Collapse</button>
+		</div>
 
-		<div class="qr-grid">
-			{% for row in qr_library %}
-			<div class="qr-card">
-				<img src="{{ row.qr_image_url }}" alt="QR for {{ row.station_name }}">
-				<div class="qr-title">{{ row.station_name }}</div>
-				<div class="qr-sub">Department: {{ row.department_name }}</div>
-				<div class="qr-sub">Location: {{ row.building_name }}</div>
-				<div class="qr-sub" style="margin-top:8px; display:flex; gap:10px; flex-wrap:wrap;">
-					{% if row.qr_png_url %}
-					<a href="{{ row.qr_png_url }}" download style="color:#93c5fd;">Download PNG</a>
-					{% endif %}
-					{% if row.qr_pdf_url %}
-					<a href="{{ row.qr_pdf_url }}" download style="color:#93c5fd;">Download PDF</a>
-					{% endif %}
+		<div id="qrLibraryBody">
+			<form method="get" action="{% url 'manage_department' %}">
+				<div class="field">
+					<label for="qr_department_id">Select Department</label>
+					<select id="qr_department_id" name="qr_department_id">
+						<option value="">All assigned departments</option>
+						{% for department in departments %}
+							<option value="{{ department.id }}" {% if selected_qr_department_id == department.id|stringformat:'s' %}selected{% endif %}>
+								{{ department.name }} ({{ department.building.name }})
+							</option>
+						{% endfor %}
+					</select>
 				</div>
+				<button class="btn" type="submit">Show QR Codes</button>
+			</form>
+
+			<div class="qr-grid">
+				{% for row in qr_library %}
+				<div class="qr-card">
+					<img src="{{ row.qr_image_url }}" alt="QR for {{ row.station_name }}">
+					<div class="qr-title">{{ row.station_name }}</div>
+					<div class="qr-sub">Department: {{ row.department_name }}</div>
+					<div class="qr-sub">Location: {{ row.building_name }}</div>
+					<div class="qr-sub" style="margin-top:8px; display:flex; gap:10px; flex-wrap:wrap;">
+						{% if row.qr_png_url %}
+						<a href="{{ row.qr_png_url }}" download style="color:#93c5fd;">Download PNG</a>
+						{% endif %}
+						{% if row.qr_pdf_url %}
+						<a href="{{ row.qr_pdf_url }}" download style="color:#93c5fd;">Download PDF</a>
+						{% endif %}
+					</div>
+				</div>
+				{% empty %}
+				<div class="qr-card">
+					<div class="qr-title">No QR codes found</div>
+					<div class="qr-sub">Create stations first, then their QR codes will appear here.</div>
+				</div>
+				{% endfor %}
 			</div>
-			{% empty %}
-			<div class="qr-card">
-				<div class="qr-title">No QR codes found</div>
-				<div class="qr-sub">Create stations first, then their QR codes will appear here.</div>
-			</div>
-			{% endfor %}
 		</div>
 	</section>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(() => {
+	const panels = document.querySelectorAll(".panel");
+	if (!panels.length) return;
+
+	const ensureHeader = (panel) => {
+		let header = panel.querySelector(":scope > .panel-header");
+		if (header) return header;
+
+		const title = panel.querySelector(":scope > h3") || panel.querySelector("h3");
+		if (!title) return null;
+
+		header = document.createElement("div");
+		header.className = "panel-header";
+		header.style.display = "flex";
+		header.style.alignItems = "center";
+		header.style.justifyContent = "space-between";
+		header.style.gap = "10px";
+		title.parentNode.insertBefore(header, title);
+		header.appendChild(title);
+		return header;
+	};
+
+	const ensureBody = (panel, header) => {
+		let body = panel.querySelector(":scope > .panel-collapse-body");
+		if (body) return body;
+
+		const qrBody = panel.querySelector(":scope > #qrLibraryBody");
+		if (qrBody) {
+			qrBody.classList.add("panel-collapse-body");
+			return qrBody;
+		}
+
+		body = document.createElement("div");
+		body.className = "panel-collapse-body";
+
+		let next = header.nextSibling;
+		while (next) {
+			const current = next;
+			next = next.nextSibling;
+			body.appendChild(current);
+		}
+		panel.appendChild(body);
+		return body;
+	};
+
+	panels.forEach((panel, index) => {
+		const header = ensureHeader(panel);
+		if (!header) return;
+
+		const body = ensureBody(panel, header);
+		if (!body) return;
+
+		const title = header.querySelector("h3");
+		const label = (title ? title.textContent : `panel-${index + 1}`).trim();
+		const safeKey = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || `panel-${index + 1}`;
+		const storageKey = `abb_panel_collapsed:${safeKey}`;
+
+		let button = header.querySelector(".panel-collapse-btn") || header.querySelector("#toggleQrLibraryBtn");
+		if (!button) {
+			button = document.createElement("button");
+			button.type = "button";
+			button.className = "btn panel-collapse-btn";
+			header.appendChild(button);
+		} else {
+			button.classList.add("panel-collapse-btn");
+		}
+
+		const applyState = (collapsed) => {
+			body.style.display = collapsed ? "none" : "block";
+			button.textContent = collapsed ? "Expand" : "Collapse";
+		};
+
+		applyState(sessionStorage.getItem(storageKey) === "1");
+
+		button.addEventListener("click", () => {
+			const collapsed = body.style.display !== "none";
+			sessionStorage.setItem(storageKey, collapsed ? "1" : "0");
+			applyState(collapsed);
+		});
+	});
+})();
+</script>
 {% endblock %}

@@ -41,15 +41,19 @@
     {% endif %}
 
     {% if selected_station %}
-    <section class="scanner-card">
+    <section class="scanner-card" id="scannerCard">
         <h1 class="scanner-title">{{ selected_station.name }}</h1>
         <p class="line" id="scannerDepartment"><strong>Department:</strong> {{ selected_station.department.name }}</p>
         <p class="line" id="scannerLocation"><strong>Location:</strong> {{ selected_station.department.building.name }}</p>
         <p class="line-time" id="scannerNow"><strong>North Carolina Time:</strong> {{ current_nc_time }}</p>
         {% if station_latest_request %}
         <p class="line" id="scannerStatus"><strong>Current Status:</strong> {{ station_latest_request.get_status_display }}</p>
+        <p class="line" id="scannerMachine"><strong>Machine:</strong> {{ station_latest_request.machine.name|default:station_default_machine_name }}</p>
+        <p class="line" id="scannerMessage"><strong>Request:</strong> {{ station_latest_request.message|default:'Station needs help.' }}</p>
         {% else %}
         <p class="line" id="scannerStatus"><strong>Current Status:</strong> No active request</p>
+        <p class="line" id="scannerMachine"><strong>Machine:</strong> {{ station_default_machine_name }}</p>
+        <p class="line" id="scannerMessage"><strong>Request:</strong> -</p>
         {% endif %}
 
         <div class="actions">
@@ -120,7 +124,10 @@
 (() => {
     const stationId = "{{ selected_station.id }}";
     const statusEl = document.getElementById("scannerStatus");
+    const machineEl = document.getElementById("scannerMachine");
+    const messageEl = document.getElementById("scannerMessage");
     const nowEl = document.getElementById("scannerNow");
+    const scannerCard = document.getElementById("scannerCard");
     const doneScreen = document.getElementById("doneScreen");
     const comingScreen = document.getElementById("comingScreen");
     const pendingScreen = document.getElementById("pendingScreen");
@@ -135,9 +142,18 @@
         cancelledScreen.style.display = status === "CANCELLED" ? "block" : "none";
 
         if (status === "COMPLETED") {
+            if (scannerCard) {
+                scannerCard.style.display = "none";
+            }
             setTimeout(() => {
+                try {
+                    window.close();
+                } catch (error) {
+                }
                 window.location.href = "{% url 'work_station_scanner_expired' %}";
             }, 1200);
+        } else if (scannerCard) {
+            scannerCard.style.display = "block";
         }
     }
 
@@ -158,6 +174,12 @@
                 if (statusEl) {
                     statusEl.innerHTML = `<strong>Current Status:</strong> ${data.latest.status_label}`;
                 }
+                if (machineEl) {
+                    machineEl.innerHTML = `<strong>Machine:</strong> ${data.latest.machine_name || "-"}`;
+                }
+                if (messageEl) {
+                    messageEl.innerHTML = `<strong>Request:</strong> ${data.latest.message || "-"}`;
+                }
                 if (comingEngineerText && data.latest.status === "COMING") {
                     const engineerName = data.latest.technician_name || "Engineering Team";
                     comingEngineerText.textContent = `${engineerName} is on the way to this station.`;
@@ -166,6 +188,13 @@
             } else {
                 if (statusEl) {
                     statusEl.innerHTML = "<strong>Current Status:</strong> No active request";
+                }
+                if (machineEl) {
+                    const defaultMachine = data.station && data.station.default_machine_name ? data.station.default_machine_name : "-";
+                    machineEl.innerHTML = `<strong>Machine:</strong> ${defaultMachine}`;
+                }
+                if (messageEl) {
+                    messageEl.innerHTML = "<strong>Request:</strong> -";
                 }
                 updateScreens("");
             }
@@ -183,6 +212,10 @@
         const payload = await response.json().catch(() => null);
         if (payload && payload.state === "CANCELLED") {
             updateScreens("CANCELLED");
+        }
+        if (payload && payload.state === "COMPLETED") {
+            updateScreens("COMPLETED");
+            return;
         }
         await refreshScannerStatus();
     }

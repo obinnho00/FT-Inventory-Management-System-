@@ -1413,6 +1413,7 @@ def work_station_view(request):
     selected_department = None
     machine_options = Machine.objects.none()
     station_latest_request = None
+    station_default_machine_name = "-"
     just_completed = completed_flag
     allowed_department_ids = _get_allowed_department_ids(request) if is_inventory_user else set()
 
@@ -1448,6 +1449,13 @@ def work_station_view(request):
         if selected_station:
             selected_department = selected_station.department
             machine_options = Machine.objects.filter(department=selected_department).order_by("name")
+            linked_machine = (
+                Machine.objects.filter(station=selected_station, department=selected_department)
+                .order_by("name")
+                .first()
+            )
+            if linked_machine:
+                station_default_machine_name = linked_machine.name
             department_id = str(selected_department.id)
         else:
             if is_inventory_user:
@@ -1503,7 +1511,7 @@ def work_station_view(request):
     else:
         active_alerts = []
 
-    is_scanner_view = bool(scan_flag and selected_station and not is_logged_in)
+    is_scanner_view = bool(scan_flag and selected_station)
 
     context = {
         "departments": departments,
@@ -1516,6 +1524,7 @@ def work_station_view(request):
         "active_alerts": active_alerts,
         "just_completed": just_completed,
         "is_scanner_view": is_scanner_view,
+        "station_default_machine_name": station_default_machine_name,
         "current_nc_time": timezone.localtime(timezone.now(), NC_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p ET"),
     }
     template_name = "scanner_station.html" if is_scanner_view else "Work_station.html"
@@ -1530,6 +1539,12 @@ def work_station_live_status(request):
         station = Station.objects.select_related("department", "department__building").filter(id=station_id).first()
         if not station:
             return JsonResponse({"ok": False, "message": "Station not found."}, status=404)
+
+        linked_machine = (
+            Machine.objects.filter(station=station, department=station.department)
+            .order_by("name")
+            .first()
+        )
 
         latest = (
             WorkOrderRequest.objects.select_related("department", "station", "machine")
@@ -1547,6 +1562,7 @@ def work_station_live_status(request):
                     "name": station.name,
                     "department_name": station.department.name,
                     "location_name": station.department.building.name,
+                    "default_machine_name": linked_machine.name if linked_machine else "-",
                 },
                 "latest": _serialize_work_order(latest) if latest else None,
             }
@@ -1843,9 +1859,16 @@ def work_station_scan_call(request):
         messages.info(request, "Call already active for this station.")
         return redirect(f"{reverse('work_station')}?station_id={station.id}&scan=1")
 
+    linked_machine = (
+        Machine.objects.filter(station=station, department=station.department)
+        .order_by("name")
+        .first()
+    )
+
     WorkOrderRequest.objects.create(
         station=station,
         department=station.department,
+        machine=linked_machine,
         message="Station needs help.",
         priority=WorkOrderRequest.PRIORITY_MEDIUM,
         status=WorkOrderRequest.STATUS_NEW,
@@ -1934,7 +1957,7 @@ def work_station_scan_complete(request):
     )
 
     if _is_ajax_request(request):
-        return JsonResponse({"ok": True, "message": "Work completed recorded."})
+        return JsonResponse({"ok": True, "message": "Work completed recorded.", "state": "COMPLETED"})
 
     return redirect("work_station_scanner_expired")
 
@@ -2043,6 +2066,7 @@ def manage_department(request):
             machine_type = request.POST.get("machine_type", "").strip()
             machine_location = request.POST.get("machine_location", "").strip()
             machine_status = request.POST.get("machine_status", "Idle").strip()
+            station_id = request.POST.get("station_id", "").strip()
             station_name = request.POST.get("station_name", "").strip()
 
             if not target_department_id or not machine_name or not machine_type or not machine_location:
@@ -2065,7 +2089,13 @@ def manage_department(request):
 
             station = None
             station_created = False
-            if station_name:
+            if station_id:
+                try:
+                    station = Station.objects.get(id=station_id, department=target_department)
+                except Station.DoesNotExist:
+                    messages.error(request, "Selected station was not found in the selected department.")
+                    return redirect("manage_department")
+            elif station_name:
                 station, station_created = Station.objects.get_or_create(
                     department=target_department,
                     name=station_name,
@@ -2086,6 +2116,58 @@ def manage_department(request):
                 request.session["manage_department_station_qr_results"] = [_build_station_qr_data(request, station)]
 
             messages.success(request, f"Machine created: {machine.name} in {target_department.name}.")
+            return redirect("manage_department")
+
+        if action == "assign_machine_station":
+            machine_id = request.POST.get("machine_id", "").strip()
+            station_id = request.POST.get("assign_station_id", "").strip()
+            station_name = request.POST.get("assign_station_name", "").strip()
+
+            if not machine_id:
+                messages.error(request, "Please select a machine.")
+                return redirect("manage_department")
+
+            try:
+                machine = Machine.objects.select_related("department").get(id=machine_id)
+            except Machine.DoesNotExist:
+                messages.error(request, "Selected machine was not found.")
+                return redirect("manage_department")
+
+            if machine.department_id not in manager_department_ids:
+                messages.error(request, "You can only manage machines in your assigned departments.")
+                return redirect("manage_department")
+
+            if not station_id and not station_name:
+                messages.error(request, "Select an existing station or enter a new station name.")
+                return redirect("manage_department")
+
+            station = None
+            station_created = False
+            if station_id:
+                try:
+                    station = Station.objects.get(id=station_id)
+                except Station.DoesNotExist:
+                    messages.error(request, "Selected station was not found.")
+                    return redirect("manage_department")
+
+                if station.department_id != machine.department_id:
+                    messages.error(request, "Machine can only be linked to a station in the same department.")
+                    return redirect("manage_department")
+            else:
+                station, station_created = Station.objects.get_or_create(
+                    department=machine.department,
+                    name=station_name,
+                )
+
+            machine.station = station
+            machine.save(update_fields=["station"])
+
+            if station_created:
+                qr_data = _build_station_qr_data(request, station)
+                _save_station_qr_assets(station, qr_data["qr_payload"])
+                request.session["manage_department_station_qr_results"] = [_build_station_qr_data(request, station)]
+
+            messages.success(request, f"Machine {machine.name} linked to station {station.name}.")
             return redirect("manage_department")
 
         if action == "add_stations_bulk":
