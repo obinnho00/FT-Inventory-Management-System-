@@ -1,0 +1,185 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Set Reminder{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'Css/SetReminder.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="reminder-wrap">
+	<div class="reminder-head">
+		<h2>Department Inventory Reminder</h2>
+		<p>Set alert levels by department, machine, and part. Email sends when quantity reaches your threshold.</p>
+	</div>
+
+	<div class="reminder-grid">
+		<section class="reminder-panel reminder-card">
+			<div class="card-header">
+					<strong>Create / Update Reminder</strong>
+				</div>
+				<div class="card-body">
+					<form method="post" action="{% url 'set_reminder' %}">
+						{% csrf_token %}
+						<input type="hidden" name="action" value="create_or_update">
+
+						<div class="field mb-3">
+							<label for="department_id" class="form-label">Department</label>
+							<select class="form-select" id="department_id" name="department_id" required>
+								<option value="">Select department</option>
+								{% for department in departments %}
+								<option value="{{ department.id }}" {% if selected_department_id == department.id|stringformat:'s' %}selected{% endif %}>
+									{{ department.name }}
+								</option>
+								{% endfor %}
+							</select>
+						</div>
+
+						<div class="field mb-3">
+							<label for="machine_id" class="form-label">Machine</label>
+							<select class="form-select" id="machine_id" name="machine_id" required>
+								<option value="">Select machine</option>
+								{% for machine in machines %}
+								<option value="{{ machine.id }}" data-department-id="{{ machine.department_id }}" {% if selected_machine_id == machine.id|stringformat:'s' %}selected{% endif %}>
+									{{ machine.name }}
+								</option>
+								{% endfor %}
+							</select>
+						</div>
+
+						<div class="field mb-3">
+							<label for="machine_part_id" class="form-label">Part</label>
+							<select class="form-select" id="machine_part_id" name="machine_part_id" required>
+								<option value="">Select part</option>
+								{% for item in machine_parts %}
+								<option value="{{ item.id }}" data-machine-id="{{ item.machine_id }}" data-department-id="{{ item.machine.department_id }}">
+									{{ item.part.name }} ({{ item.part.model_number }}) | Qty: {{ item.quantity_left }}
+								</option>
+								{% endfor %}
+							</select>
+						</div>
+
+						<div class="field mb-3">
+							<label for="alert_quantity" class="form-label">Alert Quantity</label>
+							<input type="number" min="0" class="form-control" id="alert_quantity" name="alert_quantity" required>
+						</div>
+
+						<div class="field mb-3">
+							<label class="form-label">Notify Email</label>
+							<input type="email" class="form-control" value="{{ user_email }}" readonly>
+						</div>
+
+						<button type="submit" class="btn reminder-save-btn">Save Reminder</button>
+					</form>
+				</div>
+		</section>
+
+		<section class="reminder-panel reminder-card">
+				<div class="card-header">
+					<strong>Your Active Reminders</strong>
+				</div>
+				<div class="card-body p-0">
+					{% if reminders %}
+					<div class="table-responsive">
+						<table class="reminder-table">
+							<thead>
+								<tr>
+									<th>Department</th>
+									<th>Machine</th>
+									<th>Part</th>
+									<th>Threshold</th>
+									<th>Action</th>
+								</tr>
+							</thead>
+							<tbody>
+								{% for reminder in reminders %}
+								<tr>
+									<td>{{ reminder.department.name }}</td>
+									<td>{{ reminder.machine_part.machine.name }}</td>
+									<td>{{ reminder.machine_part.part.model_number }}</td>
+									<td>{{ reminder.alert_quantity }}</td>
+									<td>
+										<form method="post" action="{% url 'set_reminder' %}" class="m-0">
+											{% csrf_token %}
+											<input type="hidden" name="action" value="deactivate">
+											<input type="hidden" name="reminder_id" value="{{ reminder.id }}">
+												<button type="submit" class="btn btn-danger">Deactivate</button>
+										</form>
+									</td>
+								</tr>
+								{% endfor %}
+							</tbody>
+						</table>
+					</div>
+					{% else %}
+					<div class="reminder-empty">No reminders configured yet.</div>
+					{% endif %}
+				</div>
+		</section>
+	</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function reminderMachineFilter() {
+	const departmentSelect = document.getElementById('department_id');
+	const machineSelect = document.getElementById('machine_id');
+	const partSelect = document.getElementById('machine_part_id');
+
+	if (!departmentSelect || !machineSelect || !partSelect) {
+		return;
+	}
+
+	const machineOptions = Array.from(machineSelect.options).slice(1);
+	const partOptions = Array.from(partSelect.options).slice(1);
+
+	function resetSelect(selectElement, placeholderText) {
+		selectElement.innerHTML = '';
+		const placeholder = document.createElement('option');
+		placeholder.value = '';
+		placeholder.textContent = placeholderText;
+		selectElement.appendChild(placeholder);
+	}
+
+	function rebuildMachines() {
+		const departmentId = departmentSelect.value;
+		const previousMachineId = machineSelect.value;
+
+		resetSelect(machineSelect, 'Select machine');
+
+		machineOptions.forEach((option) => {
+			if (!departmentId || option.dataset.departmentId === departmentId) {
+				machineSelect.appendChild(option);
+			}
+		});
+
+		if (previousMachineId && Array.from(machineSelect.options).some((option) => option.value === previousMachineId)) {
+			machineSelect.value = previousMachineId;
+		}
+	}
+
+	function rebuildParts() {
+		const machineId = machineSelect.value;
+		resetSelect(partSelect, 'Select part');
+
+		partOptions.forEach((option) => {
+			if (!machineId || option.dataset.machineId === machineId) {
+				partSelect.appendChild(option);
+			}
+		});
+	}
+
+	departmentSelect.addEventListener('change', function () {
+		rebuildMachines();
+		rebuildParts();
+	});
+
+	machineSelect.addEventListener('change', rebuildParts);
+
+	rebuildMachines();
+	rebuildParts();
+})();
+</script>
+{% endblock %}

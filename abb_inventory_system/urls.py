@@ -16,6 +16,8 @@ urlpatterns = [
     path('home/', views.Home, name='home'),
 
     path('inventory/login/', views.inventory_login_view, name='inventory_login'),
+    path('inventory/verify-email/<str:token>/', views.verify_authorized_user_email, name='verify_authorized_user_email'),
+    path('inventory/manager/verify-email/<str:token>/', views.verify_manager_email, name='verify_manager_email'),
     path('inventory/logout/', views.inventory_logout_view, name='inventory_logout'),
     path('inventory/manager-login/', views.manager_login_view, name='manager_login'),
     path('inventory/admin-manager/', views.admin_manager_accounts_view, name='manager_admin'),
@@ -26,6 +28,7 @@ urlpatterns = [
 
     path('inventory/upload-part-image/', views.upload_part_image_popup, name='upload_part_image_popup'),
     path('inventory/manage/', views.inventory_manage_view, name='inventory_manage'),
+    path('inventory/reminders/', views.DepartmentReminderView.as_view(), name='set_reminder'),
     path('inventory/stations/create-qr/', views.create_qrcode, name='create_station_qrcode'),
     path('inventory/work-station/', views.work_station_view, name='work_station'),
     path('inventory/work-station/live-status/', views.work_station_live_status, name='work_station_live_status'),

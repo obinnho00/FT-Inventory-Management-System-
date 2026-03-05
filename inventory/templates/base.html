@@ -63,6 +63,7 @@
                 <li><a href="{% url 'submit_requirement' %}">Ticket</a></li>
                 <li><a href="{{ inventory_dashboard_url }}">Main Dashboard</a></li>
                 <li><a href="{% url 'inventory_manage' %}">Manage Inventory</a></li>
+                <li><a href="{% url 'set_reminder' %}">Set Reminder</a></li>
                 {% if can_access_work_station %}
                 <li><a href="{% url 'work_station' %}">Work Station</a></li>
                 {% endif %}

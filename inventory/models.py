@@ -70,6 +70,10 @@ class DepartmentAuthorizedUser(models.Model):
     last_name = models.CharField(max_length=100)
     email = models.EmailField(max_length=254)
     is_active = models.BooleanField(default=True)
+    email_verified = models.BooleanField(default=False)
+    email_verification_token = models.CharField(max_length=128, blank=True, db_index=True)
+    email_verification_sent_at = models.DateTimeField(null=True, blank=True)
+    email_verification_expires_at = models.DateTimeField(null=True, blank=True)
     granted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -79,7 +83,8 @@ class DepartmentAuthorizedUser(models.Model):
 
     def __str__(self):
         status = "Active" if self.is_active else "Inactive"
-        return f"{self.first_name} {self.last_name} <{self.email}> - {self.department.name} ({status})"
+        verify_status = "Verified" if self.email_verified else "Pending Verification"
+        return f"{self.first_name} {self.last_name} <{self.email}> - {self.department.name} ({status}, {verify_status})"
 
 
 class ManagerAccount(models.Model):
@@ -95,6 +100,10 @@ class ManagerAccount(models.Model):
         blank=True,
     )
     is_active = models.BooleanField(default=True)
+    email_verified = models.BooleanField(default=False)
+    email_verification_token = models.CharField(max_length=128, blank=True, db_index=True)
+    email_verification_sent_at = models.DateTimeField(null=True, blank=True)
+    email_verification_expires_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -109,7 +118,8 @@ class ManagerAccount(models.Model):
 
     def __str__(self):
         status = "Active" if self.is_active else "Inactive"
-        return f"{self.first_name} {self.last_name} <{self.email}> ({status})"
+        verify_status = "Verified" if self.email_verified else "Pending Verification"
+        return f"{self.first_name} {self.last_name} <{self.email}> ({status}, {verify_status})"
 
 
 class AdminSetupKey(models.Model):
@@ -526,3 +536,39 @@ class UserEmail(models.Model):
 
     def __str__(self):
         return self.email
+
+
+class InventoryReminder(models.Model):
+    """Department-scoped inventory threshold reminder configured by authorized users."""
+
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.CASCADE,
+        related_name="inventory_reminders",
+    )
+
+    machine_part = models.ForeignKey(
+        MachinePart,
+        on_delete=models.CASCADE,
+        related_name="inventory_reminders",
+    )
+
+    alert_quantity = models.PositiveIntegerField(default=1)
+    notify_email = models.EmailField(max_length=254)
+
+    created_by_first_name = models.CharField(max_length=100, blank=True)
+    created_by_last_name = models.CharField(max_length=100, blank=True)
+    created_by_email = models.EmailField(blank=True)
+
+    is_active = models.BooleanField(default=True)
+    alert_sent = models.BooleanField(default=False)
+    last_alert_sent_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "inventory_inventory_reminder"
+        ordering = ["department__name", "machine_part__machine__name", "machine_part__part__model_number"]
+        unique_together = ("department", "machine_part", "notify_email")
+
+    def __str__(self):
+        return f"{self.department.name} | {self.machine_part.machine.name} | {self.machine_part.part.model_number} <= {self.alert_quantity}"

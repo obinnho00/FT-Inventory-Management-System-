@@ -1,19 +1,27 @@
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.core.files.base import ContentFile
+from django.core.mail import EmailMultiAlternatives
 from django.contrib import messages
 from django.db.models import Q
+from django.conf import settings
+from django.template.loader import render_to_string
 from django.utils import timezone
+from django.utils.html import strip_tags
 from django.utils.text import slugify
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.urls import reverse
+from django.views import View
 import io
 import re
+from datetime import timedelta
+from secrets import token_urlsafe
+import socket
 from PIL import Image
 import qrcode
 from zoneinfo import ZoneInfo
-from .models import Building, Department, UserRequirement, Machine, MachinePart, VendorPart, Part, DepartmentAuthorizedUser, ManagerAccount, AdminSetupKey, Station, WorkOrderRequest
+from .models import Building, Department, UserRequirement, Machine, MachinePart, VendorPart, Part, DepartmentAuthorizedUser, ManagerAccount, AdminSetupKey, Station, WorkOrderRequest, InventoryReminder
 from functools import wraps
 
 
@@ -124,6 +132,329 @@ def _set_machine_part_last_action(machine_part, request, action_type, action_qua
     machine_part.last_action_type = action_type
     machine_part.last_action_at = timezone.now()
 
+
+def _send_authorized_user_verification_email(authorized_user):
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@abb-inventory.local")
+    app_base_url = (getattr(settings, "APP_BASE_URL", "http://127.0.0.1:8000") or "").rstrip("/")
+    verification_url = f"{app_base_url}{reverse('verify_authorized_user_email', kwargs={'token': authorized_user.email_verification_token})}"
+
+    context = {
+        "first_name": authorized_user.first_name,
+        "last_name": authorized_user.last_name,
+        "department_name": authorized_user.department.name,
+        "verification_url": verification_url,
+    }
+
+    subject = f"Verify Inventory Access Email - {authorized_user.department.name}"
+    html_body = render_to_string("emails/authorized_user_verification.html", context)
+    text_body = strip_tags(html_body)
+
+    email = EmailMultiAlternatives(
+        subject,
+        text_body,
+        from_email,
+        [authorized_user.email],
+    )
+    email.attach_alternative(html_body, "text/html")
+    return email.send(fail_silently=False)
+
+
+def _is_reachable_email_domain(email):
+    # Best-effort domain verification to reject clearly fake domains.
+    # Final proof of ownership is still email link confirmation.
+    if "@" not in email:
+        return False
+
+    domain = email.rsplit("@", 1)[-1].strip().lower()
+    if not domain or "." not in domain:
+        return False
+
+    try:
+        socket.getaddrinfo(domain, None)
+    except Exception:
+        return False
+    return True
+
+
+def _send_manager_verification_email(manager):
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@abb-inventory.local")
+    app_base_url = (getattr(settings, "APP_BASE_URL", "http://127.0.0.1:8000") or "").rstrip("/")
+    verification_url = f"{app_base_url}{reverse('verify_manager_email', kwargs={'token': manager.email_verification_token})}"
+
+    context = {
+        "first_name": manager.first_name,
+        "last_name": manager.last_name,
+        "verification_url": verification_url,
+    }
+
+    subject = "Verify Manager Account Email - ABB Inventory"
+    html_body = render_to_string("emails/manager_verification.html", context)
+    text_body = strip_tags(html_body)
+
+    email = EmailMultiAlternatives(
+        subject,
+        text_body,
+        from_email,
+        [manager.email],
+    )
+    email.attach_alternative(html_body, "text/html")
+    return email.send(fail_silently=False)
+
+
+def _process_inventory_reminders_for_machine_part(machine_part):
+    # Central reminder evaluator.
+    # We call this every time quantity changes so reminder state stays accurate.
+    #
+    # Behavior:
+    # 1) If quantity is at/below threshold and no alert has been sent yet -> send email and mark alert_sent=True.
+    # 2) If quantity rises above threshold later -> reset alert_sent=False so future drops can alert again.
+    #
+    # This function intentionally does not raise exceptions because inventory updates should not fail
+    # just because email delivery is temporarily unavailable.
+    active_reminders = InventoryReminder.objects.filter(
+        machine_part=machine_part,
+        department_id=machine_part.machine.department_id,
+        is_active=True,
+    )
+
+    current_quantity = machine_part.quantity_left
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@abb-inventory.local")
+    app_base_url = (getattr(settings, "APP_BASE_URL", "http://127.0.0.1:8000") or "").rstrip("/")
+
+    inventory_manage_url = f"{app_base_url}{reverse('inventory_manage')}"
+    reminder_settings_url = f"{app_base_url}{reverse('set_reminder')}"
+
+    for reminder in active_reminders:
+        threshold_reached = current_quantity <= reminder.alert_quantity
+
+        if threshold_reached and not reminder.alert_sent:
+            subject = f"Inventory Alert: {machine_part.part.model_number} on {machine_part.machine.name}"
+            context = {
+                "department_name": machine_part.machine.department.name,
+                "machine_name": machine_part.machine.name,
+                "part_name": machine_part.part.name,
+                "part_model_number": machine_part.part.model_number,
+                "current_quantity": current_quantity,
+                "alert_quantity": reminder.alert_quantity,
+                "placement_location": machine_part.placement_location or "-",
+                "inventory_manage_url": inventory_manage_url,
+                "reminder_settings_url": reminder_settings_url,
+                "notify_email": reminder.notify_email,
+            }
+
+            html_body = render_to_string("emails/inventory_reminder_alert.html", context)
+            text_body = strip_tags(html_body)
+
+            try:
+                email = EmailMultiAlternatives(
+                    subject,
+                    text_body,
+                    from_email,
+                    [reminder.notify_email],
+                )
+                email.attach_alternative(html_body, "text/html")
+                sent_count = email.send(fail_silently=False)
+            except Exception:
+                sent_count = 0
+
+            if sent_count:
+                reminder.alert_sent = True
+                reminder.last_alert_sent_at = timezone.now()
+                reminder.save(update_fields=["alert_sent", "last_alert_sent_at"])
+
+        elif not threshold_reached and reminder.alert_sent:
+            reminder.alert_sent = False
+            reminder.save(update_fields=["alert_sent"])
+
+
+class DepartmentReminderView(View):
+    # Class-based view for reminder setup.
+    # User requested "another class in view" and detailed comments, so this class keeps
+    # all reminder-specific behavior in one place and explains each authorization step.
+
+    template_name = "SetReminder.html"
+
+    def _get_logged_in_inventory_user(self, request):
+        # Only inventory-user sessions are allowed to configure reminders.
+        # Manager-only sessions must not create reminders through this endpoint.
+        return _get_inventory_session_user(request)
+
+    def _get_authorized_department_ids(self, user):
+        # Read department IDs from session payload and normalize to ints.
+        raw_ids = (user or {}).get("department_ids") or []
+        normalized = []
+        for value in raw_ids:
+            try:
+                normalized.append(int(value))
+            except (TypeError, ValueError):
+                continue
+        return normalized
+
+    def _build_context(self, request, user, selected_department_id="", selected_machine_id=""):
+        # Build dropdown and table data while enforcing department scope.
+        # Every queryset is filtered by authorized departments to prevent cross-department access.
+        authorized_department_ids = self._get_authorized_department_ids(user)
+        departments = Department.objects.filter(id__in=authorized_department_ids).order_by("name")
+
+        if not selected_department_id and departments.exists():
+            selected_department_id = str(departments.first().id)
+
+        machine_parts = MachinePart.objects.select_related(
+            "machine", "part", "machine__department"
+        ).filter(machine__department_id__in=authorized_department_ids)
+
+        machines = Machine.objects.select_related("department").filter(
+            department_id__in=authorized_department_ids
+        )
+
+        if selected_department_id:
+            machine_parts = machine_parts.filter(machine__department_id=selected_department_id)
+            machines = machines.filter(department_id=selected_department_id)
+
+        machines = machines.order_by("name")
+
+        if selected_machine_id:
+            machine_parts = machine_parts.filter(machine_id=selected_machine_id)
+
+        machine_parts = machine_parts.order_by("machine__name", "part__model_number")
+
+        reminders = InventoryReminder.objects.select_related(
+            "department", "machine_part", "machine_part__machine", "machine_part__part"
+        ).filter(
+            department_id__in=authorized_department_ids,
+            notify_email=(user or {}).get("email", ""),
+            is_active=True,
+        ).order_by("department__name", "machine_part__machine__name", "machine_part__part__model_number")
+
+        return {
+            "departments": departments,
+            "selected_department_id": str(selected_department_id or ""),
+            "machines": machines,
+            "selected_machine_id": str(selected_machine_id or ""),
+            "machine_parts": machine_parts,
+            "reminders": reminders,
+            "user_email": (user or {}).get("email", ""),
+        }
+
+    def get(self, request):
+        # GET renders form and existing reminders.
+        user = self._get_logged_in_inventory_user(request)
+        if not user:
+            messages.error(request, "Please login first.")
+            return redirect("inventory_login")
+
+        context = self._build_context(
+            request,
+            user,
+            selected_department_id=request.GET.get("department_id", "").strip(),
+            selected_machine_id=request.GET.get("machine_id", "").strip(),
+        )
+        return _render_template(request, self.template_name, context)
+
+    def post(self, request):
+        # POST handles two operations:
+        # - create_or_update: create or update threshold for this user+department+machine-part
+        # - deactivate: turn off a reminder
+        user = self._get_logged_in_inventory_user(request)
+        if not user:
+            messages.error(request, "Please login first.")
+            return redirect("inventory_login")
+
+        action = request.POST.get("action", "create_or_update").strip().lower()
+        authorized_department_ids = set(self._get_authorized_department_ids(user))
+
+        if action == "deactivate":
+            reminder_id = request.POST.get("reminder_id", "").strip()
+            reminder = InventoryReminder.objects.filter(id=reminder_id).first()
+            if not reminder:
+                messages.error(request, "Reminder not found.")
+                return redirect("set_reminder")
+
+            if reminder.department_id not in authorized_department_ids:
+                messages.error(request, "You can only modify reminders for your authorized departments.")
+                return redirect("set_reminder")
+
+            if reminder.notify_email != (user.get("email", "") or ""):
+                messages.error(request, "You can only modify your own reminder entries.")
+                return redirect("set_reminder")
+
+            reminder.is_active = False
+            reminder.save(update_fields=["is_active"])
+            messages.success(request, "Reminder deactivated.")
+            return redirect("set_reminder")
+
+        department_id = request.POST.get("department_id", "").strip()
+        machine_id = request.POST.get("machine_id", "").strip()
+        machine_part_id = request.POST.get("machine_part_id", "").strip()
+        alert_quantity = request.POST.get("alert_quantity", "").strip()
+
+        if not department_id or not machine_id or not machine_part_id or not alert_quantity:
+            messages.error(request, "Department, machine, part, and alert quantity are required.")
+            return redirect("set_reminder")
+
+        try:
+            department_id_int = int(department_id)
+        except (TypeError, ValueError):
+            messages.error(request, "Please select a valid department.")
+            return redirect("set_reminder")
+
+        if department_id_int not in authorized_department_ids:
+            messages.error(request, "You can only set reminders for your authorized departments.")
+            return redirect("set_reminder")
+
+        try:
+            alert_quantity_int = int(alert_quantity)
+            if alert_quantity_int < 0:
+                raise ValueError()
+        except ValueError:
+            messages.error(request, "Alert quantity must be 0 or greater.")
+            return redirect("set_reminder")
+
+        machine_part = MachinePart.objects.select_related("machine", "part", "machine__department").filter(id=machine_part_id).first()
+        if not machine_part:
+            messages.error(request, "Selected machine part was not found.")
+            return redirect("set_reminder")
+
+        if machine_part.machine.department_id != department_id_int:
+            messages.error(request, "Selected machine part does not belong to the selected department.")
+            return redirect("set_reminder")
+
+        try:
+            machine_id_int = int(machine_id)
+        except (TypeError, ValueError):
+            messages.error(request, "Please select a valid machine.")
+            return redirect("set_reminder")
+
+        if machine_part.machine_id != machine_id_int:
+            messages.error(request, "Selected part does not belong to the selected machine.")
+            return redirect("set_reminder")
+
+        reminder_defaults = {
+            "alert_quantity": alert_quantity_int,
+            "is_active": True,
+            "alert_sent": False,
+            "created_by_first_name": user.get("first_name", ""),
+            "created_by_last_name": user.get("last_name", ""),
+            "created_by_email": user.get("email", ""),
+        }
+
+        reminder, created = InventoryReminder.objects.update_or_create(
+            department_id=department_id_int,
+            machine_part=machine_part,
+            notify_email=(user.get("email", "") or ""),
+            defaults=reminder_defaults,
+        )
+
+        # Re-evaluate right away so an immediate alert is sent if quantity is already below threshold.
+        _process_inventory_reminders_for_machine_part(machine_part)
+
+        if created:
+            messages.success(request, "Reminder created successfully.")
+        else:
+            messages.success(request, "Reminder updated successfully.")
+
+        return redirect(f"{reverse('set_reminder')}?department_id={department_id_int}")
+
 def inventory_login_view(request):
     # Login page for inventory operations.
     # User must provide email + target department + manager access code for that department.
@@ -160,10 +491,25 @@ def inventory_login_view(request):
                 email__iexact=email,
                 department_id=department_id_int,
                 is_active=True,
+                email_verified=True,
             )
             .first()
         )
         if not authorized_user:
+            pending_user = (
+                DepartmentAuthorizedUser.objects.select_related("department")
+                .filter(
+                    email__iexact=email,
+                    department_id=department_id_int,
+                    is_active=True,
+                    email_verified=False,
+                )
+                .first()
+            )
+            if pending_user:
+                messages.error(request, "Your email is not verified yet. Please check your inbox and confirm your email before logging in.")
+                return redirect("inventory_login")
+
             messages.error(request, "Access not granted for this email in the selected department.")
             return redirect("inventory_login")
 
@@ -812,6 +1158,7 @@ def inventory_manage_view(request):
                 "last_used_quantity",
                 "last_action_at",
             ])
+            _process_inventory_reminders_for_machine_part(machine_part)
 
             if created:
                 messages.success(
@@ -879,6 +1226,7 @@ def inventory_manage_view(request):
                 "last_used_quantity",
                 "last_action_at",
             ])
+            _process_inventory_reminders_for_machine_part(machine_part)
 
             messages.success(
                 request,
@@ -928,6 +1276,10 @@ def manager_login_view(request):
         manager = ManagerAccount.objects.filter(email__iexact=email, is_active=True).first()
         if not manager or not manager.check_access_code(manager_code):
             messages.error(request, "Invalid manager email or access code.")
+            return redirect("manager_login")
+
+        if not manager.email_verified:
+            messages.error(request, "Manager email is not verified yet. Please verify your email from the verification link sent by admin.")
             return redirect("manager_login")
 
         request.session["inventory_manager_account_id"] = manager.id
@@ -988,6 +1340,10 @@ def admin_manager_accounts_view(request):
                 messages.error(request, "Please provide a valid manager email address.")
                 return redirect("manager_admin")
 
+            if not _is_reachable_email_domain(email):
+                messages.error(request, "Manager email domain could not be validated. Please use a real reachable email domain.")
+                return redirect("manager_admin")
+
             if len(access_code) < 6:
                 messages.error(request, "Manager access code must be at least 6 characters.")
                 return redirect("manager_admin")
@@ -1005,6 +1361,10 @@ def admin_manager_accounts_view(request):
                 last_name=last_name.title(),
                 email=email,
                 is_active=True,
+                email_verified=False,
+                email_verification_token=token_urlsafe(32),
+                email_verification_sent_at=timezone.now(),
+                email_verification_expires_at=timezone.now() + timedelta(hours=24),
             )
             manager.set_access_code(access_code)
             manager.save()
@@ -1012,7 +1372,48 @@ def admin_manager_accounts_view(request):
             departments = Department.objects.filter(id__in=department_ids)
             manager.departments.set(departments)
 
-            messages.success(request, f"Manager account created for {manager.first_name} {manager.last_name}.")
+            try:
+                _send_manager_verification_email(manager)
+            except Exception:
+                messages.warning(request, f"Manager account created for {manager.first_name} {manager.last_name}, but verification email failed to send.")
+                return redirect("manager_admin")
+
+            messages.success(request, f"Manager account created for {manager.first_name} {manager.last_name}. Verification email sent. Manager can login only after email confirmation.")
+            return redirect("manager_admin")
+
+        if action == "admin_resend_manager_verification":
+            manager_id = request.POST.get("manager_id", "").strip()
+
+            if not manager_id:
+                messages.error(request, "Select a manager account to resend verification.")
+                return redirect("manager_admin")
+
+            try:
+                manager = ManagerAccount.objects.get(id=manager_id)
+            except ManagerAccount.DoesNotExist:
+                messages.error(request, "Selected manager account was not found.")
+                return redirect("manager_admin")
+
+            if manager.email_verified:
+                messages.success(request, f"{manager.email} is already verified.")
+                return redirect("manager_admin")
+
+            manager.email_verification_token = token_urlsafe(32)
+            manager.email_verification_sent_at = timezone.now()
+            manager.email_verification_expires_at = timezone.now() + timedelta(hours=24)
+            manager.save(update_fields=[
+                "email_verification_token",
+                "email_verification_sent_at",
+                "email_verification_expires_at",
+            ])
+
+            try:
+                _send_manager_verification_email(manager)
+            except Exception:
+                messages.error(request, f"Failed to resend verification email to {manager.email}.")
+                return redirect("manager_admin")
+
+            messages.success(request, f"Verification email resent to manager {manager.email}.")
             return redirect("manager_admin")
 
         if action == "admin_update_manager_access":
@@ -1238,6 +1639,33 @@ def admin_manager_accounts_view(request):
     return _render_template(request, "admin_manager_accounts.html", context)
 
 
+def verify_manager_email(request, token):
+    if not token:
+        messages.error(request, "Invalid manager verification link.")
+        return redirect("manager_login")
+
+    manager = ManagerAccount.objects.filter(email_verification_token=token).first()
+    if not manager:
+        messages.error(request, "Manager verification link is invalid or already used.")
+        return redirect("manager_login")
+
+    if manager.email_verified:
+        messages.success(request, "Manager email is already verified. You can login now.")
+        return redirect("manager_login")
+
+    expires_at = manager.email_verification_expires_at
+    if expires_at and timezone.now() > expires_at:
+        messages.error(request, "Manager verification link expired. Ask admin to resend verification.")
+        return redirect("manager_login")
+
+    manager.email_verified = True
+    manager.email_verification_token = ""
+    manager.save(update_fields=["email_verified", "email_verification_token"])
+
+    messages.success(request, "Manager email verified successfully. You can now login.")
+    return redirect("manager_login")
+
+
 @require_any_login
 def grant_access_view(request):
     manager_account = _get_manager_session_account(request)
@@ -1288,6 +1716,7 @@ def grant_access_view(request):
 
             department_map = Department.objects.in_bulk(valid_department_ids)
             updated_department_names = []
+            verification_failed_departments = []
 
             for department_id_int in valid_department_ids:
                 department = department_map.get(department_id_int)
@@ -1301,6 +1730,7 @@ def grant_access_view(request):
                         "first_name": first_name.title(),
                         "last_name": last_name.title(),
                         "is_active": is_active,
+                        "email_verified": False,
                     },
                 )
 
@@ -1308,7 +1738,35 @@ def grant_access_view(request):
                     granted_user.first_name = first_name.title()
                     granted_user.last_name = last_name.title()
                     granted_user.is_active = is_active
-                    granted_user.save(update_fields=["first_name", "last_name", "is_active"])
+                    if not granted_user.email_verified:
+                        granted_user.email_verification_token = token_urlsafe(32)
+                        granted_user.email_verification_sent_at = timezone.now()
+                        granted_user.email_verification_expires_at = timezone.now() + timedelta(hours=24)
+                        granted_user.save(update_fields=[
+                            "first_name",
+                            "last_name",
+                            "is_active",
+                            "email_verification_token",
+                            "email_verification_sent_at",
+                            "email_verification_expires_at",
+                        ])
+                    else:
+                        granted_user.save(update_fields=["first_name", "last_name", "is_active"])
+                else:
+                    granted_user.email_verification_token = token_urlsafe(32)
+                    granted_user.email_verification_sent_at = timezone.now()
+                    granted_user.email_verification_expires_at = timezone.now() + timedelta(hours=24)
+                    granted_user.save(update_fields=[
+                        "email_verification_token",
+                        "email_verification_sent_at",
+                        "email_verification_expires_at",
+                    ])
+
+                if not granted_user.email_verified:
+                    try:
+                        _send_authorized_user_verification_email(granted_user)
+                    except Exception:
+                        verification_failed_departments.append(department.name)
 
                 updated_department_names.append(department.name)
 
@@ -1317,7 +1775,11 @@ def grant_access_view(request):
                 return redirect("manager_access")
 
             department_list_text = ", ".join(sorted(updated_department_names))
-            messages.success(request, f"Access granted for {first_name.title()} {last_name.title()} ({email}) in: {department_list_text}.")
+            if verification_failed_departments:
+                failed_text = ", ".join(sorted(verification_failed_departments))
+                messages.warning(request, f"Access saved for {first_name.title()} {last_name.title()} ({email}) in: {department_list_text}. Verification email failed for: {failed_text}.")
+            else:
+                messages.success(request, f"Access saved for {first_name.title()} {last_name.title()} ({email}) in: {department_list_text}. Verification email sent. User can login only after email confirmation.")
             return redirect("manager_access")
 
         if action == "update_existing_user_access":
@@ -1377,6 +1839,46 @@ def grant_access_view(request):
                 request,
                 f"Removed team member {deleted_name} ({deleted_email}) from {deleted_department}.",
             )
+            return redirect("manager_access")
+
+        if action == "resend_user_verification":
+            authorized_user_id = request.POST.get("authorized_user_id", "").strip()
+
+            if not authorized_user_id:
+                messages.error(request, "Select an existing user to resend verification.")
+                return redirect("manager_access")
+
+            try:
+                authorized_user = DepartmentAuthorizedUser.objects.select_related("department").get(id=authorized_user_id)
+            except DepartmentAuthorizedUser.DoesNotExist:
+                messages.error(request, "Selected authorized user was not found.")
+                return redirect("manager_access")
+
+            manager_department_ids = set(manager_account.departments.values_list("id", flat=True))
+            if authorized_user.department_id not in manager_department_ids:
+                messages.error(request, "You can only resend verification for users in your assigned departments.")
+                return redirect("manager_access")
+
+            if authorized_user.email_verified:
+                messages.success(request, f"{authorized_user.email} is already verified.")
+                return redirect("manager_access")
+
+            authorized_user.email_verification_token = token_urlsafe(32)
+            authorized_user.email_verification_sent_at = timezone.now()
+            authorized_user.email_verification_expires_at = timezone.now() + timedelta(hours=24)
+            authorized_user.save(update_fields=[
+                "email_verification_token",
+                "email_verification_sent_at",
+                "email_verification_expires_at",
+            ])
+
+            try:
+                _send_authorized_user_verification_email(authorized_user)
+            except Exception:
+                messages.error(request, f"Failed to resend verification email to {authorized_user.email}.")
+                return redirect("manager_access")
+
+            messages.success(request, f"Verification email resent to {authorized_user.email}.")
             return redirect("manager_access")
 
         messages.error(request, "Invalid manager action.")
@@ -1928,6 +2430,7 @@ def work_station_record_part_usage(request):
             "last_action_at",
         ]
     )
+    _process_inventory_reminders_for_machine_part(machine_part)
 
     return JsonResponse(
         {
@@ -2366,6 +2869,7 @@ def work_station_scan_record_usage(request):
             "last_action_at",
         ]
     )
+    _process_inventory_reminders_for_machine_part(machine_part)
 
     if not work_order.machine_id:
         work_order.machine = target_machine
@@ -2823,3 +3327,33 @@ def manage_department(request):
         "selected_qr_department_id": qr_department_id,
     }
     return _render_template(request, "add_department.html", context)
+
+
+# set emsil reminder for department inventory reminder model
+
+
+def verify_authorized_user_email(request, token):
+    if not token:
+        messages.error(request, "Invalid verification link.")
+        return redirect("inventory_login")
+
+    authorized_user = DepartmentAuthorizedUser.objects.filter(email_verification_token=token).first()
+    if not authorized_user:
+        messages.error(request, "Verification link is invalid or already used.")
+        return redirect("inventory_login")
+
+    if authorized_user.email_verified:
+        messages.success(request, "Your email is already verified. You can login now.")
+        return redirect("inventory_login")
+
+    expires_at = authorized_user.email_verification_expires_at
+    if expires_at and timezone.now() > expires_at:
+        messages.error(request, "Verification link expired. Ask your manager to resend access verification.")
+        return redirect("inventory_login")
+
+    authorized_user.email_verified = True
+    authorized_user.email_verification_token = ""
+    authorized_user.save(update_fields=["email_verified", "email_verification_token"])
+
+    messages.success(request, "Email verified successfully. You can now login to inventory.")
+    return redirect("inventory_login")
