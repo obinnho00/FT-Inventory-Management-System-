@@ -1611,7 +1611,7 @@ def work_station_view(request):
         messages.error(request, "Please login first.")
         return redirect("inventory_login")
 
-    if not allowed_department_ids:
+    if not allowed_department_ids and not scan_flag:
         messages.error(request, "No department access assigned. Ask your manager for access.")
         context = {
             "departments": Department.objects.none(),
@@ -1629,7 +1629,7 @@ def work_station_view(request):
 
     if station_id:
         station_queryset = Station.objects.select_related("department", "department__building").filter(id=station_id)
-        if is_logged_in:
+        if is_logged_in and not scan_flag:
             station_queryset = station_queryset.filter(department_id__in=allowed_department_ids)
         selected_station = station_queryset.first()
         if selected_station:
@@ -1649,45 +1649,50 @@ def work_station_view(request):
             else:
                 messages.error(request, "Station QR code is invalid.")
 
-    if not selected_department and department_id:
-        selected_department = (
-            Department.objects.select_related("building")
-            .filter(id=department_id, id__in=allowed_department_ids)
-            .first()
+    if not scan_flag:
+        if not selected_department and department_id:
+            selected_department = (
+                Department.objects.select_related("building")
+                .filter(id=department_id, id__in=allowed_department_ids)
+                .first()
+            )
+            if selected_department:
+                machine_options = Machine.objects.filter(department=selected_department).order_by("name")
+            else:
+                messages.error(request, "You are not allowed to view this department queue.")
+
+        if not selected_department:
+            selected_department = (
+                Department.objects.select_related("building")
+                .filter(id__in=allowed_department_ids)
+                .order_by("name")
+                .first()
+            )
+            if selected_department:
+                machine_options = Machine.objects.filter(department=selected_department).order_by("name")
+                department_id = str(selected_department.id)
+
+        departments = Department.objects.select_related("building").filter(id__in=allowed_department_ids).order_by("name")
+
+        stations = Station.objects.select_related("department", "department__building").filter(
+            department_id__in=allowed_department_ids
         )
         if selected_department:
-            machine_options = Machine.objects.filter(department=selected_department).order_by("name")
-        else:
-            messages.error(request, "You are not allowed to view this department queue.")
+            stations = stations.filter(department=selected_department)
+        stations = stations.order_by("department__name", "name")
 
-    if not selected_department:
-        selected_department = (
-            Department.objects.select_related("building")
-            .filter(id__in=allowed_department_ids)
-            .order_by("name")
-            .first()
+        work_orders = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(
+            department_id__in=allowed_department_ids
         )
         if selected_department:
-            machine_options = Machine.objects.filter(department=selected_department).order_by("name")
-            department_id = str(selected_department.id)
-
-    departments = Department.objects.select_related("building").filter(id__in=allowed_department_ids).order_by("name")
-
-    stations = Station.objects.select_related("department", "department__building").filter(
-        department_id__in=allowed_department_ids
-    )
-    if selected_department:
-        stations = stations.filter(department=selected_department)
-    stations = stations.order_by("department__name", "name")
-
-    work_orders = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(
-        department_id__in=allowed_department_ids
-    )
-    if selected_department:
-        work_orders = work_orders.filter(department=selected_department)
-    if selected_station:
-        work_orders = work_orders.filter(station=selected_station)
-    work_orders = work_orders.order_by("-scanned_at")
+            work_orders = work_orders.filter(department=selected_department)
+        if selected_station:
+            work_orders = work_orders.filter(station=selected_station)
+        work_orders = work_orders.order_by("-scanned_at")
+    else:
+        departments = Department.objects.none()
+        stations = Station.objects.none()
+        work_orders = WorkOrderRequest.objects.none()
 
     if selected_station and not station_latest_request:
         station_latest_request = (
@@ -1700,17 +1705,20 @@ def work_station_view(request):
             .first()
         )
 
-    active_alerts = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(
-        status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING],
-        department_id__in=allowed_department_ids,
-    )
-    if selected_department:
-        active_alerts = active_alerts.filter(department=selected_department)
-    if selected_station:
-        active_alerts = active_alerts.filter(station=selected_station)
-    active_alerts = list(active_alerts.order_by("-scanned_at"))
+    if not scan_flag:
+        active_alerts = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(
+            status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING],
+            department_id__in=allowed_department_ids,
+        )
+        if selected_department:
+            active_alerts = active_alerts.filter(department=selected_department)
+        if selected_station:
+            active_alerts = active_alerts.filter(station=selected_station)
+        active_alerts = list(active_alerts.order_by("-scanned_at"))
+    else:
+        active_alerts = []
 
-    is_scanner_view = bool(scan_flag and selected_station)
+    is_scanner_view = bool(scan_flag)
 
     context = {
         "departments": departments,
