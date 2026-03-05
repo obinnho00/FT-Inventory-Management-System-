@@ -1503,7 +1503,7 @@ def work_station_view(request):
         if selected_department:
             work_orders = work_orders.filter(department=selected_department)
 
-        work_orders = work_orders.order_by("scanned_at")
+        work_orders = work_orders.order_by("-scanned_at")
     else:
         departments = Department.objects.none()
         stations = Station.objects.none()
@@ -1524,7 +1524,7 @@ def work_station_view(request):
         active_alerts = list(
             WorkOrderRequest.objects.select_related("department", "station", "machine")
             .filter(status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING], department_id__in=allowed_department_ids)
-            .order_by("scanned_at")
+            .order_by("-scanned_at")
         )
     else:
         active_alerts = []
@@ -1598,12 +1598,12 @@ def work_station_live_status(request):
     )
     if department_id:
         work_orders = work_orders.filter(department_id=department_id)
-    work_orders = work_orders.order_by("scanned_at")[:120]
+    work_orders = work_orders.order_by("-scanned_at")[:120]
 
     active_alerts = (
         WorkOrderRequest.objects.select_related("department", "station", "machine")
         .filter(status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING], department_id__in=allowed_department_ids)
-        .order_by("scanned_at")[:50]
+        .order_by("-scanned_at")[:50]
     )
 
     return JsonResponse(
@@ -1883,6 +1883,13 @@ def work_station_complete_request(request):
 
     work_order_id = request.POST.get("work_order_id", "").strip()
     department_id = request.POST.get("department_id", "").strip()
+    inventory_used_answer = request.POST.get("inventory_used_answer", "").strip().lower()
+
+    if inventory_used_answer not in {"yes", "no"}:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Please answer inventory usage before completion."}, status=400)
+        messages.error(request, "Please answer inventory usage before completion.")
+        return redirect("work_station")
 
     work_order = WorkOrderRequest.objects.select_related("department").filter(id=work_order_id).first()
     if not work_order:

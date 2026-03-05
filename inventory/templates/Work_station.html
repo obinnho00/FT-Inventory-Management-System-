@@ -30,13 +30,19 @@
 	.screen p { margin: 0; color: #e5e7eb; font-size: 16px; }
 	.screen-coming { background: linear-gradient(135deg, #16a34a, #22c55e); border: 1px solid rgba(187,247,208,0.7); }
 	.screen-completed { background: linear-gradient(135deg, #0ea5e9, #22d3ee); border: 1px solid rgba(186,230,253,0.7); }
-	.alert-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; margin-top: 12px; }
-	.alert-card { background: rgba(15,29,45,0.92); border: 1px solid rgba(255,255,255,0.16); border-radius: 10px; padding: 12px; }
+	.alert-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 360px)); gap: 12px; margin-top: 12px; justify-content: start; }
+	.alert-card { background: rgba(15,29,45,0.92); border: 1px solid rgba(255,255,255,0.16); border-radius: 10px; padding: 12px; width: 100%; }
 	.alert-card.alert-new { background: rgba(127,29,29,0.45); border-color: rgba(239,68,68,0.55); }
 	.alert-card.alert-coming { background: rgba(153,27,27,0.35); border-color: rgba(248,113,113,0.6); }
 	.alert-card h4 { margin: 0 0 8px; color: #fff; font-size: 16px; }
 	.alert-line { margin: 3px 0; color: #cbd5e1; font-size: 13px; }
 	.alert-actions { margin-top: 10px; display: flex; gap: 8px; }
+	.work-filter-row { display: grid; grid-template-columns: 200px 1fr; gap: 10px; margin-bottom: 10px; }
+	.work-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; max-height: 460px; overflow-y: auto; padding-right: 4px; }
+	.work-card { background: rgba(15,29,45,0.92); border: 1px solid rgba(255,255,255,0.16); border-radius: 10px; padding: 12px; }
+	.work-card h4 { margin: 0 0 8px; color: #fff; font-size: 16px; }
+	.work-line { margin: 3px 0; color: #cbd5e1; font-size: 13px; }
+	.work-actions { margin-top: 10px; display: flex; gap: 8px; }
 	.field { margin-bottom: 12px; }
 	.field label { display: block; margin-bottom: 6px; color: #cbd5e1; font-size: 13px; }
 	.field input, .field select, .field textarea { width: 100%; box-sizing: border-box; padding: 10px 11px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.22); background: #0f1d2d; color: #fff; font-size: 14px; }
@@ -64,6 +70,10 @@
 	.usage-close { border: none; border-radius: 6px; background: #475569; color: #fff; padding: 6px 10px; cursor: pointer; }
 	.usage-note { margin: 6px 0 12px; color: #cbd5e1; font-size: 13px; }
 	.usage-actions { margin-top: 14px; display: flex; gap: 10px; justify-content: flex-end; }
+	.complete-usage-modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(2,6,23,0.72); z-index: 10001; }
+	.complete-usage-card { width: min(560px, 92vw); background: #1e293b; border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; padding: 16px; }
+	.complete-usage-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 10px; }
+	.complete-usage-head h4 { margin:0; color:#fff; font-size:18px; }
 	@media (max-width: 980px) { .panel-grid { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
@@ -184,85 +194,84 @@
 			<button type="button" class="btn" id="toggleWorkRequestsBtn">Collapse</button>
 		</div>
 		<div id="workRequestsPanelBody">
-		<table class="wo-table" id="workOrdersTable">
-			<thead>
-				<tr>
-					<th>Priority</th>
-					<th>Status</th>
-					<th>Department</th>
-					<th>Location</th>
-					<th>Station</th>
-					<th>Machine</th>
-					<th>Message</th>
-					<th>Scanned</th>
-					<th>Accepted</th>
-					<th>Completed</th>
-					<th>Action</th>
-				</tr>
-			</thead>
-			<tbody id="workOrdersBody">
-				{% for item in work_orders %}
-				<tr>
-					<td>
-						{% if item.priority == 1 %}
-							<span class="tag tag-high">High</span>
-						{% elif item.priority == 2 %}
-							<span class="tag tag-medium">Medium</span>
-						{% else %}
-							<span class="tag tag-low">Low</span>
-						{% endif %}
-					</td>
-					<td>
-						{% if item.status == 'NEW' %}
-							<span class="tag tag-status-new">New</span>
-						{% elif item.status == 'COMING' %}
-							<span class="tag tag-status-coming">Coming</span>
-						{% elif item.status == 'CANCELLED' %}
-							<span class="tag tag-status-cancelled">Cancelled</span>
-						{% else %}
-							<span class="tag tag-status-completed">Completed</span>
-						{% endif %}
-					</td>
-					<td>{{ item.department.name }}</td>
-					<td>{{ item.department.building.name }}</td>
-					<td>{{ item.station.name }}</td>
-					<td>
-						{% if item.machine %}
-						<button type="button" class="machine-link-btn js-machine-link" data-work-order-id="{{ item.id }}" data-machine-name="{{ item.machine.name }}">{{ item.machine.name }}</button>
-						{% else %}
-						-
-						{% endif %}
-					</td>
-					<td>{{ item.message|default:'-' }}</td>
-					<td>{{ item.scanned_at }}</td>
-					<td>{{ item.accepted_at|default:'-' }}</td>
-					<td>{{ item.completed_at|default:'-' }}</td>
-					<td>
-						{% if item.status == 'NEW' %}
-						<form method="post" action="{% url 'work_station_accept' %}" class="js-live-action">
-							{% csrf_token %}
-							<input type="hidden" name="work_order_id" value="{{ item.id }}">
-							<input type="hidden" name="station_id" value="{{ item.station.id }}">
-							<input type="hidden" name="department_id" value="{{ item.department.id }}">
-							<button type="submit" class="btn btn-warning">Accept (Coming)</button>
-						</form>
-						{% elif item.status == 'COMING' %}
-						<form method="post" action="{% url 'work_station_complete' %}" class="js-live-action">
-							{% csrf_token %}
-							<input type="hidden" name="work_order_id" value="{{ item.id }}">
-							<input type="hidden" name="department_id" value="{{ item.department.id }}">
-							<button type="submit" class="btn">Work Completed</button>
-						</form>
-						{% else %}
-						-
-						{% endif %}
-					</td>
-				</tr>
-				{% empty %}
-				<tr><td colspan="11">No requests found.</td></tr>
-				{% endfor %}
-			</tbody>
-		</table>
+		<div class="work-filter-row">
+			<div class="field" style="margin-bottom:0;">
+				<label for="workStatusFilter">Status Filter</label>
+				<select id="workStatusFilter">
+					<option value="">All statuses</option>
+					<option value="NEW">New</option>
+					<option value="COMING">Coming</option>
+					<option value="COMPLETED">Completed</option>
+					<option value="CANCELLED">Cancelled</option>
+				</select>
+			</div>
+			<div class="field" style="margin-bottom:0;">
+				<label for="workSearchFilter">Search (station/machine/message)</label>
+				<input id="workSearchFilter" type="text" placeholder="Type to filter requests...">
+			</div>
+		</div>
+		<div class="work-card-grid" id="workOrdersBody">
+			{% for item in work_orders %}
+			<div class="work-card" data-status="{{ item.status }}" data-station="{{ item.station.name }}" data-machine="{{ item.machine.name|default:'' }}" data-message="{{ item.message|default:'' }}">
+				<h4>{{ item.station.name }}</h4>
+				<p class="work-line"><strong>Priority:</strong>
+					{% if item.priority == 1 %}
+						<span class="tag tag-high">High</span>
+					{% elif item.priority == 2 %}
+						<span class="tag tag-medium">Medium</span>
+					{% else %}
+						<span class="tag tag-low">Low</span>
+					{% endif %}
+				</p>
+				<p class="work-line"><strong>Status:</strong>
+					{% if item.status == 'NEW' %}
+						<span class="tag tag-status-new">New</span>
+					{% elif item.status == 'COMING' %}
+						<span class="tag tag-status-coming">Coming</span>
+					{% elif item.status == 'CANCELLED' %}
+						<span class="tag tag-status-cancelled">Cancelled</span>
+					{% else %}
+						<span class="tag tag-status-completed">Completed</span>
+					{% endif %}
+				</p>
+				<p class="work-line"><strong>Department:</strong> {{ item.department.name }}</p>
+				<p class="work-line"><strong>Location:</strong> {{ item.department.building.name }}</p>
+				<p class="work-line"><strong>Machine:</strong>
+					{% if item.machine %}
+					<button type="button" class="machine-link-btn js-machine-link" data-work-order-id="{{ item.id }}" data-machine-name="{{ item.machine.name }}">{{ item.machine.name }}</button>
+					{% else %}
+					-
+					{% endif %}
+				</p>
+				<p class="work-line"><strong>Message:</strong> {{ item.message|default:'-' }}</p>
+				<p class="work-line"><strong>Scanned:</strong> {{ item.scanned_at }}</p>
+				<p class="work-line"><strong>Accepted:</strong> {{ item.accepted_at|default:'-' }}</p>
+				<p class="work-line"><strong>Completed:</strong> {{ item.completed_at|default:'-' }}</p>
+				<div class="work-actions">
+					{% if item.status == 'NEW' %}
+					<form method="post" action="{% url 'work_station_accept' %}" class="js-live-action">
+						{% csrf_token %}
+						<input type="hidden" name="work_order_id" value="{{ item.id }}">
+						<input type="hidden" name="station_id" value="{{ item.station.id }}">
+						<input type="hidden" name="department_id" value="{{ item.department.id }}">
+						<button type="submit" class="btn btn-warning">Accept (Coming)</button>
+					</form>
+					{% elif item.status == 'COMING' %}
+					<form method="post" action="{% url 'work_station_complete' %}" class="js-live-action js-work-complete" data-work-order-id="{{ item.id }}" data-machine-name="{{ item.machine.name|default:'-' }}">
+						{% csrf_token %}
+						<input type="hidden" name="work_order_id" value="{{ item.id }}">
+						<input type="hidden" name="department_id" value="{{ item.department.id }}">
+						<button type="submit" class="btn">Work Completed</button>
+					</form>
+					{% else %}
+					-
+					{% endif %}
+				</div>
+			</div>
+			{% empty %}
+			<div class="work-card"><p class="work-line">No requests found.</p></div>
+			{% endfor %}
+		</div>
 		</div>
 	</section>
 
@@ -297,6 +306,39 @@
 			</div>
 		</div>
 	</div>
+
+	<div class="complete-usage-modal" id="completeUsageModal" aria-hidden="true">
+		<div class="complete-usage-card">
+			<div class="complete-usage-head">
+				<h4>Complete Work Order</h4>
+				<button type="button" class="usage-close" id="completeUsageCloseBtn">Close</button>
+			</div>
+			<p class="usage-note" id="completeUsageMachineText">Machine: -</p>
+			<div class="field">
+				<label for="completeUsageAnswer">Did you use inventory?</label>
+				<select id="completeUsageAnswer">
+					<option value="">Select an option</option>
+					<option value="yes">Yes</option>
+					<option value="no">No</option>
+				</select>
+			</div>
+			<div id="completeUsageFields" style="display:none;">
+				<div class="field">
+					<label for="completeUsagePartSelect">Part used (this machine)</label>
+					<select id="completeUsagePartSelect">
+						<option value="">Select part</option>
+					</select>
+				</div>
+				<div class="field">
+					<label for="completeUsageQtyInput">How many used</label>
+					<input id="completeUsageQtyInput" type="number" min="1" step="1" placeholder="e.g. 2">
+				</div>
+			</div>
+			<div class="usage-actions">
+				<button type="button" class="btn" id="completeUsageSubmitBtn">Submit Completion</button>
+			</div>
+		</div>
+	</div>
 	{% endif %}
 </div>
 {% endblock %}
@@ -319,8 +361,19 @@
 	const usagePartSelect = document.getElementById("usagePartSelect");
 	const usageQtyInput = document.getElementById("usageQtyInput");
 	const usageSaveBtn = document.getElementById("usageSaveBtn");
+	const workStatusFilter = document.getElementById("workStatusFilter");
+	const workSearchFilter = document.getElementById("workSearchFilter");
+	const completeUsageModal = document.getElementById("completeUsageModal");
+	const completeUsageCloseBtn = document.getElementById("completeUsageCloseBtn");
+	const completeUsageMachineText = document.getElementById("completeUsageMachineText");
+	const completeUsageAnswer = document.getElementById("completeUsageAnswer");
+	const completeUsageFields = document.getElementById("completeUsageFields");
+	const completeUsagePartSelect = document.getElementById("completeUsagePartSelect");
+	const completeUsageQtyInput = document.getElementById("completeUsageQtyInput");
+	const completeUsageSubmitBtn = document.getElementById("completeUsageSubmitBtn");
 	const csrfToken = "{{ csrf_token }}";
 	let activeUsageWorkOrderId = "";
+	let activeCompleteForm = null;
 
 	function setupWorkRequestsCollapse() {
 		if (!toggleWorkRequestsBtn || !workRequestsPanelBody) return;
@@ -364,7 +417,7 @@
 		}
 		if (item.status === "COMING") {
 			return `
-				<form method="post" action="{% url 'work_station_complete' %}" class="js-live-action">
+				<form method="post" action="{% url 'work_station_complete' %}" class="js-live-action js-work-complete" data-work-order-id="${item.id}" data-machine-name="${escapeHtml(item.machine_name || "-")}">
 					<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
 					<input type="hidden" name="work_order_id" value="${item.id}">
 					<input type="hidden" name="department_id" value="${departmentSelect ? departmentSelect.value : ''}">
@@ -409,26 +462,40 @@
 	function renderWorkOrders(items) {
 		if (!workOrdersBody) return;
 		if (!items.length) {
-			workOrdersBody.innerHTML = '<tr><td colspan="11">No requests found.</td></tr>';
+			workOrdersBody.innerHTML = '<div class="work-card"><p class="work-line">No requests found.</p></div>';
 			return;
 		}
 		workOrdersBody.innerHTML = items.map((item) => `
-			<tr>
-				<td>${priorityTag(item.priority, item.priority_label)}</td>
-				<td>${statusTag(item.status, item.status_label)}</td>
-				<td>${item.department_name}</td>
-				<td>${item.location_name}</td>
-				<td>${item.station_name}</td>
-				<td>${buildMachineCell(item)}</td>
-				<td>${item.message}</td>
-				<td>${item.scanned_at}</td>
-				<td>${item.accepted_at}</td>
-				<td>${item.completed_at}</td>
-				<td>${buildActionCell(item)}</td>
-			</tr>
+			<div class="work-card" data-status="${item.status}" data-station="${escapeHtml(item.station_name)}" data-machine="${escapeHtml(item.machine_name || "")}" data-message="${escapeHtml(item.message || "")}">
+				<h4>${item.station_name}</h4>
+				<p class="work-line"><strong>Priority:</strong> ${priorityTag(item.priority, item.priority_label)}</p>
+				<p class="work-line"><strong>Status:</strong> ${statusTag(item.status, item.status_label)}</p>
+				<p class="work-line"><strong>Department:</strong> ${item.department_name}</p>
+				<p class="work-line"><strong>Location:</strong> ${item.location_name}</p>
+				<p class="work-line"><strong>Machine:</strong> ${buildMachineCell(item)}</p>
+				<p class="work-line"><strong>Message:</strong> ${item.message}</p>
+				<p class="work-line"><strong>Scanned:</strong> ${item.scanned_at}</p>
+				<p class="work-line"><strong>Accepted:</strong> ${item.accepted_at}</p>
+				<p class="work-line"><strong>Completed:</strong> ${item.completed_at}</p>
+				<div class="work-actions">${buildActionCell(item)}</div>
+			</div>
 		`).join("");
 		bindActionForms();
 		bindMachineLinks();
+		applyWorkOrderFilters();
+	}
+
+	function applyWorkOrderFilters() {
+		if (!workOrdersBody) return;
+		const wantedStatus = workStatusFilter ? (workStatusFilter.value || "").trim().toUpperCase() : "";
+		const searchText = workSearchFilter ? (workSearchFilter.value || "").trim().toLowerCase() : "";
+		workOrdersBody.querySelectorAll(".work-card").forEach((card) => {
+			const cardStatus = (card.getAttribute("data-status") || "").toUpperCase();
+			const bag = `${card.getAttribute("data-station") || ""} ${card.getAttribute("data-machine") || ""} ${card.getAttribute("data-message") || ""}`.toLowerCase();
+			const statusMatch = !wantedStatus || cardStatus === wantedStatus;
+			const textMatch = !searchText || bag.includes(searchText);
+			card.style.display = statusMatch && textMatch ? "block" : "none";
+		});
 	}
 
 	function openUsageModal(workOrderId, machineName) {
@@ -522,8 +589,13 @@
 		renderWorkOrders(data.work_orders || []);
 	}
 
-	async function submitLiveForm(form) {
+	async function submitLiveForm(form, extraFields) {
 		const body = new FormData(form);
+		if (extraFields) {
+			Object.keys(extraFields).forEach((key) => {
+				body.set(key, extraFields[key]);
+			});
+		}
 		await fetch(form.action, {
 			method: "POST",
 			body,
@@ -536,9 +608,55 @@
 		document.querySelectorAll(".js-live-action").forEach((form) => {
 			form.addEventListener("submit", async (event) => {
 				event.preventDefault();
+				if (form.classList.contains("js-work-complete")) {
+					activeCompleteForm = form;
+					const machineName = form.getAttribute("data-machine-name") || "-";
+					const workOrderId = form.getAttribute("data-work-order-id") || "";
+					if (completeUsageMachineText) {
+						completeUsageMachineText.textContent = `Machine: ${machineName}`;
+					}
+					if (completeUsageAnswer) {
+						completeUsageAnswer.value = "";
+					}
+					if (completeUsageFields) {
+						completeUsageFields.style.display = "none";
+					}
+					if (completeUsageQtyInput) {
+						completeUsageQtyInput.value = "";
+					}
+					if (completeUsagePartSelect) {
+						completeUsagePartSelect.innerHTML = '<option value="">Select part</option>';
+					}
+					if (completeUsageModal) {
+						completeUsageModal.style.display = "flex";
+					}
+					if (workOrderId) {
+						await loadMachinePartsForComplete(workOrderId);
+					}
+					return;
+				}
 				await submitLiveForm(form);
 			});
 		});
+	}
+
+	async function loadMachinePartsForComplete(workOrderId) {
+		const response = await fetch(`{% url 'work_station_machine_parts' %}?work_order_id=${encodeURIComponent(workOrderId)}`, {
+			headers: { "X-Requested-With": "XMLHttpRequest" }
+		});
+		const data = await response.json().catch(() => ({ ok: false, message: "Failed to load parts." }));
+		if (!data.ok) {
+			if (completeUsagePartSelect) {
+				completeUsagePartSelect.innerHTML = '<option value="">No parts available</option>';
+			}
+			return;
+		}
+		const options = (data.parts || []).map((row) => (
+			`<option value="${row.machine_part_id}">${escapeHtml(row.part_name)} (${escapeHtml(row.model_number)}) - Qty: ${row.quantity_left}</option>`
+		)).join("");
+		if (completeUsagePartSelect) {
+			completeUsagePartSelect.innerHTML = '<option value="">Select part</option>' + options;
+		}
 	}
 
 	if (usageReplacedSelect) {
@@ -557,6 +675,85 @@
 		usageCloseBtn.addEventListener("click", closeUsageModal);
 	}
 
+	if (workStatusFilter) {
+		workStatusFilter.addEventListener("change", applyWorkOrderFilters);
+	}
+	if (workSearchFilter) {
+		workSearchFilter.addEventListener("input", applyWorkOrderFilters);
+	}
+
+	if (completeUsageAnswer) {
+		completeUsageAnswer.addEventListener("change", () => {
+			if (completeUsageFields) {
+				completeUsageFields.style.display = completeUsageAnswer.value === "yes" ? "block" : "none";
+			}
+		});
+	}
+
+	if (completeUsageCloseBtn) {
+		completeUsageCloseBtn.addEventListener("click", () => {
+			if (completeUsageModal) {
+				completeUsageModal.style.display = "none";
+			}
+			activeCompleteForm = null;
+		});
+	}
+
+	if (completeUsageModal) {
+		completeUsageModal.addEventListener("click", (event) => {
+			if (event.target === completeUsageModal) {
+				completeUsageModal.style.display = "none";
+				activeCompleteForm = null;
+			}
+		});
+	}
+
+	if (completeUsageSubmitBtn) {
+		completeUsageSubmitBtn.addEventListener("click", async () => {
+			if (!activeCompleteForm) {
+				return;
+			}
+			const answer = completeUsageAnswer ? (completeUsageAnswer.value || "").trim().toLowerCase() : "";
+			if (!answer) {
+				window.alert("Please answer if inventory was used before completion.");
+				return;
+			}
+			if (answer === "yes") {
+				const machinePartId = completeUsagePartSelect ? completeUsagePartSelect.value : "";
+				const usedQty = completeUsageQtyInput ? completeUsageQtyInput.value : "";
+				if (!machinePartId || !usedQty) {
+					window.alert("Select part and used quantity.");
+					return;
+				}
+				const workOrderId = activeCompleteForm.getAttribute("data-work-order-id") || "";
+				const payload = new URLSearchParams();
+				payload.set("work_order_id", workOrderId);
+				payload.set("machine_part_id", machinePartId);
+				payload.set("used_quantity", usedQty);
+				const usageResponse = await fetch("{% url 'work_station_record_part_usage' %}", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/x-www-form-urlencoded",
+						"X-Requested-With": "XMLHttpRequest",
+						"X-CSRFToken": csrfToken,
+					},
+					body: payload.toString(),
+				});
+				const usageData = await usageResponse.json().catch(() => ({ ok: false, message: "Could not save inventory usage." }));
+				if (!usageResponse.ok || !usageData.ok) {
+					window.alert(usageData.message || "Could not save inventory usage.");
+					return;
+				}
+			}
+
+			if (completeUsageModal) {
+				completeUsageModal.style.display = "none";
+			}
+			await submitLiveForm(activeCompleteForm, { inventory_used_answer: answer });
+			activeCompleteForm = null;
+		});
+	}
+
 	if (machineUsageModal) {
 		machineUsageModal.addEventListener("click", (event) => {
 			if (event.target === machineUsageModal) {
@@ -568,6 +765,7 @@
 	bindActionForms();
 	bindMachineLinks();
 	setupWorkRequestsCollapse();
+	applyWorkOrderFilters();
 	refreshLiveData();
 	setInterval(refreshLiveData, 3000);
 })();

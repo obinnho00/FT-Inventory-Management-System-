@@ -173,6 +173,7 @@
     const scannerUsageMachine = document.getElementById("scannerUsageMachine");
     const completeForm = document.querySelector(".js-scanner-complete");
     const initialStatus = "{% if just_completed %}COMPLETED{% elif station_latest_request and station_latest_request.status == 'NEW' %}NEW{% elif station_latest_request and station_latest_request.status == 'COMING' %}COMING{% else %}{% endif %}";
+    let hadActiveRequestInSession = initialStatus === "NEW" || initialStatus === "COMING";
 
     function updateScreens(status) {
         if (!doneScreen || !comingScreen || !pendingScreen || !cancelledScreen) return;
@@ -180,6 +181,10 @@
         doneScreen.style.display = status === "COMPLETED" ? "block" : "none";
         comingScreen.style.display = status === "COMING" ? "block" : "none";
         cancelledScreen.style.display = status === "CANCELLED" ? "block" : "none";
+
+        if (status === "NEW" || status === "COMING") {
+            hadActiveRequestInSession = true;
+        }
 
         if (status === "COMPLETED") {
             if (scannerCard) {
@@ -281,6 +286,10 @@
                 }
                 if (messageEl) {
                     messageEl.innerHTML = "<strong>Request:</strong> -";
+                }
+                if (hadActiveRequestInSession) {
+                    window.location.href = "{% url 'work_station_scanner_expired' %}";
+                    return;
                 }
                 updateScreens("");
             }
