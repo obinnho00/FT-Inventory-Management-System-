@@ -142,10 +142,20 @@
 			<div class="field">
 				<label for="department_id">Department</label>
 				<select id="department_id" name="department_id">
-					<option value="">All departments</option>
 					{% for department in departments %}
 						<option value="{{ department.id }}" {% if selected_department and selected_department.id == department.id %}selected{% endif %}>
 							{{ department.name }} ({{ department.building.name }})
+						</option>
+					{% endfor %}
+				</select>
+			</div>
+			<div class="field">
+				<label for="station_id">Station</label>
+				<select id="station_id" name="station_id">
+					<option value="">All stations in department</option>
+					{% for station in stations %}
+						<option value="{{ station.id }}" {% if selected_station and selected_station.id == station.id %}selected{% endif %}>
+							{{ station.name }}
 						</option>
 					{% endfor %}
 				</select>
@@ -348,6 +358,7 @@
 <script>
 (() => {
 	const departmentSelect = document.getElementById("department_id");
+	const stationSelect = document.getElementById("station_id");
 	const alertGrid = document.getElementById("liveAlertGrid");
 	const workOrdersBody = document.getElementById("workOrdersBody");
 	const nowDisplay = document.getElementById("ncNowDisplay");
@@ -577,7 +588,8 @@
 
 	async function refreshLiveData() {
 		const departmentId = departmentSelect ? departmentSelect.value : "";
-		const url = `{% url 'work_station_live_status' %}?department_id=${encodeURIComponent(departmentId || "")}`;
+		const stationId = stationSelect ? stationSelect.value : "";
+		const url = `{% url 'work_station_live_status' %}?department_id=${encodeURIComponent(departmentId || "")}&filter_station_id=${encodeURIComponent(stationId || "")}`;
 		const response = await fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } });
 		if (!response.ok) return;
 		const data = await response.json();

@@ -5,7 +5,7 @@
 {% block extra_css %}
 <style>
 	body { background-color: #1E293B; }
-	.wrap { width: 100%; max-width: 1650px; margin: 24px auto; padding: 0 18px 28px; color: #e2e8f0; }
+	.wrap { width: 100%; max-width: 1650px; margin: -45px auto 0; padding: 0 18px 28px; color: #e2e8f0; }
 	.head { text-align: center; margin-bottom: 14px; }
 	.head h2 { margin: 0 0 4px; color: #fff; font-size: 22px; font-weight: 500; }
 	.head p { margin: 0; color: #cbd5e1; font-size: 13px; }
@@ -268,10 +268,7 @@
 	{% endif %}
 
 	<section class="panel" style="margin-top:14px;">
-		<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;">
-			<h3 style="margin:0; border-bottom:none; padding-bottom:0;">QR Code Library</h3>
-			<button type="button" class="btn" id="toggleQrLibraryBtn">Collapse</button>
-		</div>
+		<h3>QR Code Library</h3>
 
 		<div id="qrLibraryBody">
 			<form method="get" action="{% url 'manage_department' %}">

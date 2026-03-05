@@ -399,11 +399,6 @@
                 <button class="btn" type="submit">Grant Access</button>
             </form>
 
-            <form method="post" action="{% url 'manager_access' %}" style="margin-top: 12px;">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="manager_logout">
-                <button class="btn btn-danger" type="submit">Manager Sign Out</button>
-            </form>
         </section>
 
     </div>

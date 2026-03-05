@@ -10,20 +10,13 @@
     }
     
     .dashboard-container {
-        display: flex;
-        height: calc(100vh - 130px);
+        display: block;
         margin: 0;
-        gap: 0;
-        overflow: hidden;
+        width: 100%;
     }
     
     .department-sidebar {
-        width: 240px;
-        background: #1E293B;
-        color: white;
-        display: flex;
-        flex-direction: column;
-        border-right: 1px solid rgba(255,255,255,0.1);
+        display: none;
     }
     
     .sidebar-header {
@@ -86,11 +79,11 @@
     }
     
     .inventory-content {
-        flex: 1;
+        width: 100%;
         background-color: #1E293B;
         display: flex;
         flex-direction: column;
-        overflow: hidden;
+        overflow: visible;
     }
     
     .content-header {
@@ -99,7 +92,7 @@
         border-bottom: 1px solid rgba(255,255,255,0.1);
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        justify-content: flex-start;
         gap: 12px;
     }
     
@@ -110,25 +103,83 @@
         color: white;
     }
 
-    .sidebar-toggle-btn {
-        border: 1px solid rgba(255,255,255,0.2);
+    .inventory-filter-panel {
+        margin: 14px 24px 0;
         background: #0f1d2d;
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 8px;
+        padding: 12px;
+    }
+
+    .inventory-filter-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    .inventory-filter-title {
+        margin: 0;
+        color: #fff;
+        font-size: 15px;
+        font-weight: 600;
+    }
+
+    .inventory-filter-toggle {
+        border: 1px solid rgba(255,255,255,0.2);
+        background: #1E293B;
         color: #e2e8f0;
         border-radius: 6px;
-        padding: 7px 10px;
-        font-size: 13px;
-        font-weight: 500;
+        padding: 6px 10px;
+        font-size: 12px;
         cursor: pointer;
-        white-space: nowrap;
     }
 
-    .sidebar-toggle-btn:hover {
-        background: #152438;
+    .inventory-filter-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 10px;
+        align-items: end;
     }
 
-    .dashboard-container.sidebar-collapsed .department-sidebar {
-        display: none;
+    .inventory-filter-field label {
+        display: block;
+        margin-bottom: 6px;
+        color: #cbd5e1;
+        font-size: 13px;
     }
+
+    .inventory-filter-field select {
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: 1px solid rgba(255,255,255,0.2);
+        background: #1E293B;
+        color: #fff;
+        font-size: 13px;
+    }
+
+    .inventory-filter-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .inventory-filter-btn {
+        background: #2563eb;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 13px;
+        cursor: pointer;
+    }
+
+    .inventory-filter-btn.secondary {
+        background: #334155;
+    }
+
+    .sidebar-toggle-btn { display: none; }
     
     .table-wrapper {
         flex: 1;
@@ -411,31 +462,46 @@
 
 <div class="dashboard-container">
 
-    <div class="department-sidebar">
-        <div class="sidebar-header">
-            <h4>Departments</h4>
-        </div>
-        
-        <div class="sidebar-content">
-            {% for dept in departments %}
-                <div class="dept-item {% if selected_department == dept.id|stringformat:'s' %}active{% endif %}">
-                    <a href="?department={{ dept.id }}">
-                        {{ dept.name }}
-                    </a>
-                </div>
-            {% endfor %}
-            
-            <div class="show-all-link">
-                <a href="{% url 'inventory' %}">Show All Departments</a>
-            </div>
-        </div>
-    </div>
-
     <div class="inventory-content">
         <div class="content-header">
-            <h3>IMS</h3>
-            <button id="sidebarToggleBtn" type="button" class="sidebar-toggle-btn">Hide Departments</button>
+            <h3>All Departments Inventory Dashboard</h3>
         </div>
+
+        {% if show_inventory_filters %}
+        <section class="inventory-filter-panel" id="inventoryFilterPanel">
+            <div class="inventory-filter-head">
+                <h4 class="inventory-filter-title">Department and Station Filter</h4>
+                <button type="button" class="inventory-filter-toggle" id="inventoryFilterToggle">Collapse</button>
+            </div>
+            <div id="inventoryFilterBody">
+                <form method="get" action="{% url 'inventory' %}" id="inventoryFilterForm">
+                    <div class="inventory-filter-grid">
+                        <div class="inventory-filter-field">
+                            <label for="inventoryDepartmentSelect">Department</label>
+                            <select id="inventoryDepartmentSelect" name="department">
+                                {% for dept in departments %}
+                                    <option value="{{ dept.id }}" {% if selected_department == dept.id|stringformat:'s' %}selected{% endif %}>{{ dept.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="inventory-filter-field">
+                            <label for="inventoryStationSelect">Station</label>
+                            <select id="inventoryStationSelect" name="station">
+                                <option value="">All stations in department</option>
+                                {% for station in stations %}
+                                    <option value="{{ station.id }}" {% if selected_station == station.id|stringformat:'s' %}selected{% endif %}>{{ station.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="inventory-filter-actions">
+                            <button type="submit" class="inventory-filter-btn">Apply</button>
+                            <a href="{% url 'inventory' %}" class="inventory-filter-btn secondary" style="text-decoration:none; display:inline-flex; align-items:center;">Reset</a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </section>
+        {% endif %}
         
         <div class="table-wrapper">
             <table id="inventoryTable" class="table table-hover">
@@ -752,11 +818,36 @@ document.getElementById("popup").addEventListener("click", function(e) {
 
 <script>
 $(document).ready(function() {
-    const dashboardContainer = document.querySelector('.dashboard-container');
-    const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
     const rowDetails = JSON.parse(document.getElementById("rowDetailsData").textContent || "[]");
+    const inventoryFilterToggle = document.getElementById('inventoryFilterToggle');
+    const inventoryFilterBody = document.getElementById('inventoryFilterBody');
+    const inventoryDepartmentSelect = document.getElementById('inventoryDepartmentSelect');
     buildPopupPartOptions(rowDetails);
     preselectPopupPart();
+
+    if (inventoryFilterToggle && inventoryFilterBody) {
+        const key = 'inventoryDashboardFilterCollapsed';
+        const setState = (collapsed) => {
+            inventoryFilterBody.style.display = collapsed ? 'none' : 'block';
+            inventoryFilterToggle.textContent = collapsed ? 'Expand' : 'Collapse';
+        };
+        const collapsed = sessionStorage.getItem(key) === '1';
+        setState(collapsed);
+        inventoryFilterToggle.addEventListener('click', function() {
+            const nextCollapsed = inventoryFilterBody.style.display !== 'none';
+            sessionStorage.setItem(key, nextCollapsed ? '1' : '0');
+            setState(nextCollapsed);
+        });
+    }
+
+    if (inventoryDepartmentSelect) {
+        inventoryDepartmentSelect.addEventListener('change', function() {
+            const currentUrl = new URL(window.location.href);
+            currentUrl.searchParams.set('department', this.value || '');
+            currentUrl.searchParams.delete('station');
+            window.location.href = currentUrl.toString();
+        });
+    }
 
     $(document).on('change', '#popupPartSelect', function() {
         updatePopupImageStatus();
@@ -785,33 +876,6 @@ $(document).ready(function() {
             }
         }
     });
-
-    function updateSidebarToggleLabel() {
-        if (!dashboardContainer || !sidebarToggleBtn) {
-            return;
-        }
-        const collapsed = dashboardContainer.classList.contains('sidebar-collapsed');
-        sidebarToggleBtn.textContent = collapsed ? 'Show Departments' : 'Hide Departments';
-    }
-
-    if (dashboardContainer && sidebarToggleBtn) {
-        const saved = localStorage.getItem('inventorySidebarCollapsed');
-        if (saved === '1') {
-            dashboardContainer.classList.add('sidebar-collapsed');
-        }
-        updateSidebarToggleLabel();
-
-        sidebarToggleBtn.addEventListener('click', function() {
-            dashboardContainer.classList.toggle('sidebar-collapsed');
-            const collapsed = dashboardContainer.classList.contains('sidebar-collapsed');
-            localStorage.setItem('inventorySidebarCollapsed', collapsed ? '1' : '0');
-            updateSidebarToggleLabel();
-
-            setTimeout(function() {
-                table.columns.adjust().draw(false);
-            }, 120);
-        });
-    }
 
     const headerIndex = {};
     $('#inventoryTable thead th').each(function(index) {

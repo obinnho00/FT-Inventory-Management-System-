@@ -8,11 +8,32 @@
     <title>{% block title %}ABB Inventory System{% endblock %}</title>
 
     <link rel="stylesheet" href="{% static 'Css/Home.css' %}">
+    <style>
+        .profile-menu-wrap { position: relative; }
+        .profile-toggle-link { cursor: pointer; }
+        .profile-popover {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            width: 320px;
+            background: #0f1d2d;
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 8px;
+            padding: 12px;
+            z-index: 1200;
+            display: none;
+        }
+        .profile-popover.open { display: block; }
+        .profile-row { margin: 0 0 10px; }
+        .profile-row:last-child { margin-bottom: 0; }
+        .profile-label { display: block; color: #93c5fd; font-size: 12px; margin-bottom: 3px; }
+        .profile-value { color: #e2e8f0; font-size: 13px; word-break: break-word; }
+    </style>
 
     {% block extra_css %}{% endblock %}
 </head>
 
-<body>
+<body class="{% if show_public_dashboard_search and not inventory_user and not manager_account and not admin_unlocked and not request.user.is_superuser %}has-header-search{% else %}no-header-search{% endif %}">
 
 <!-- ================= HEADER ================= -->
 <header class="main-header">
@@ -40,27 +61,51 @@
                 {% if inventory_user %}
                 
                 <li><a href="{% url 'submit_requirement' %}">Ticket</a></li>
+                <li><a href="{{ inventory_dashboard_url }}">Main Dashboard</a></li>
                 <li><a href="{% url 'inventory_manage' %}">Manage Inventory</a></li>
                 {% if can_access_work_station %}
                 <li><a href="{% url 'work_station' %}">Work Station</a></li>
                 {% endif %}
                 <li><a href="{% url 'inventory_logout' %}">Logout</a></li>
-                <li>
-                    <a href="#" onclick="return false;">
-                        User: {{ inventory_user.first_name }} {{ inventory_user.last_name }}
+                <li class="profile-menu-wrap">
+                    <a href="#" id="inventoryProfileToggle" class="profile-toggle-link" onclick="return false;">
+                        {{ inventory_user.first_name }} {{ inventory_user.last_name }}
                     </a>
+                    <div class="profile-popover" id="inventoryProfilePopover">
+                        <div class="profile-row">
+                            <span class="profile-label">Departments</span>
+                            <span class="profile-value">{{ inventory_user_departments_text|default:'-' }}</span>
+                        </div>
+                        <div class="profile-row">
+                            <span class="profile-label">Reports To</span>
+                            <span class="profile-value">{{ reporting_manager_name|default:'-' }}</span>
+                        </div>
+                        <div class="profile-row">
+                            <span class="profile-label">Reports To Email</span>
+                            <span class="profile-value">{{ reporting_manager_email|default:'-' }}</span>
+                        </div>
+                    </div>
                 </li>
                 {% elif manager_account %}
                 <li><a href="{% url 'submit_requirement' %}">Ticket</a></li>
+                <li><a href="{{ inventory_dashboard_url }}">Main Dashboard</a></li>
                 <li><a href="{% url 'manager_access' %}">Manager Access</a></li>
                 <li><a href="{% url 'manage_department' %}">Department Setup</a></li>
-                {% if can_access_work_station %}
-                <li><a href="{% url 'work_station' %}">Work Station</a></li>
-                {% endif %}
-                <li>
-                    <a href="#" onclick="return false;">
-                        Manager: {{ manager_account.first_name }} {{ manager_account.last_name }}
+                <li><a href="{% url 'inventory_logout' %}">Logout</a></li>
+                <li class="profile-menu-wrap">
+                    <a href="#" id="managerProfileToggle" class="profile-toggle-link" onclick="return false;">
+                        {{ manager_account.first_name }} {{ manager_account.last_name }}
                     </a>
+                    <div class="profile-popover" id="managerProfilePopover">
+                        <div class="profile-row">
+                            <span class="profile-label">Departments</span>
+                            <span class="profile-value">{{ manager_departments_text|default:'-' }}</span>
+                        </div>
+                        <div class="profile-row">
+                            <span class="profile-label">Email</span>
+                            <span class="profile-value">{{ manager_account.email|default:'-' }}</span>
+                        </div>
+                    </div>
                 </li>
                 {% else %}
                 <li><a href="{% url 'inventory_login' %}">Login</a></li>
@@ -73,6 +118,7 @@
         </nav>
     </div>
 
+    {% if show_public_dashboard_search and not inventory_user and not manager_account and not admin_unlocked and not request.user.is_superuser %}
     <!-- Global Search -->
     <div class="nav-search">
         <form method="GET"  action="{% url 'inventory_search' %}">
@@ -83,6 +129,7 @@
             <button type="submit" class="search-btn">Search</button>
         </form>
     </div>
+    {% endif %}
 
 </header>
 
@@ -120,6 +167,34 @@ document.getElementById("menu-toggle").addEventListener("click", function() {
             sessionStorage.setItem(storageKey, String(window.scrollY || 0));
         });
     });
+})();
+
+(function profilePopovers() {
+    function setupProfilePopover(toggleId, popoverId) {
+        const toggle = document.getElementById(toggleId);
+        const popover = document.getElementById(popoverId);
+        if (!toggle || !popover) {
+            return;
+        }
+
+        toggle.addEventListener("click", function(event) {
+            event.preventDefault();
+            popover.classList.toggle("open");
+        });
+
+        document.addEventListener("click", function(event) {
+            if (!popover.classList.contains("open")) {
+                return;
+            }
+            if (popover.contains(event.target) || toggle.contains(event.target)) {
+                return;
+            }
+            popover.classList.remove("open");
+        });
+    }
+
+    setupProfilePopover("inventoryProfileToggle", "inventoryProfilePopover");
+    setupProfilePopover("managerProfileToggle", "managerProfilePopover");
 })();
 </script>
 

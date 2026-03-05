@@ -51,14 +51,58 @@ def _build_shared_template_context(request):
     inventory_user = _get_inventory_session_user(request)
     department_names = (inventory_user or {}).get("department_names") or []
     manager_account = _get_manager_session_account(request)
-    can_access_work_station = bool(_get_allowed_department_ids(request))
+    manager_department_names = []
+    if manager_account:
+        manager_department_names = list(manager_account.departments.order_by("name").values_list("name", flat=True))
+    allowed_department_ids = sorted(_get_allowed_department_ids(request))
+    can_access_work_station = bool(allowed_department_ids)
+    inventory_dashboard_url = reverse("inventory")
+    reporting_manager_name = "-"
+    reporting_manager_email = "-"
+
+    if inventory_user and allowed_department_ids:
+        user_email = (inventory_user.get("email") or "").strip().lower()
+        allowed_department_id_set = set(allowed_department_ids)
+        reporting_manager = None
+        best_score = -1
+
+        manager_candidates = (
+            ManagerAccount.objects.filter(is_active=True, departments__id__in=allowed_department_ids)
+            .prefetch_related("departments")
+            .order_by("first_name", "last_name", "email")
+            .distinct()
+        )
+
+        for candidate in manager_candidates:
+            candidate_email = (candidate.email or "").strip().lower()
+            if user_email and candidate_email == user_email:
+                continue
+
+            candidate_department_ids = {department.id for department in candidate.departments.all()}
+            overlap_score = len(candidate_department_ids.intersection(allowed_department_id_set))
+
+            if overlap_score > best_score:
+                reporting_manager = candidate
+                best_score = overlap_score
+
+        if reporting_manager:
+            reporting_manager_name = f"{reporting_manager.first_name} {reporting_manager.last_name}".strip() or "-"
+            reporting_manager_email = reporting_manager.email or "-"
+
+    if allowed_department_ids:
+        inventory_dashboard_url = f"{reverse('inventory')}?department={allowed_department_ids[0]}"
 
     return {
         "inventory_user": inventory_user,
         "inventory_user_departments_text": ", ".join(department_names),
         "manager_account": manager_account,
+        "show_public_dashboard_search": False,
+        "manager_departments_text": ", ".join(manager_department_names),
         "admin_unlocked": bool(request.session.get("inventory_admin_manager_setup_unlocked", False)),
         "can_access_work_station": can_access_work_station,
+        "inventory_dashboard_url": inventory_dashboard_url,
+        "reporting_manager_name": reporting_manager_name,
+        "reporting_manager_email": reporting_manager_email,
     }
 
 def _render_template(request, template_name, context=None):
@@ -82,16 +126,15 @@ def _set_machine_part_last_action(machine_part, request, action_type, action_qua
 
 def inventory_login_view(request):
     # Login page for inventory operations.
-    # User must provide first/last name + email.
-    # Authorization is granted when the email exists in manager-approved allowed users.
+    # User must provide email + target department + manager access code for that department.
     if request.method == "POST":
-        first_name = request.POST.get("first_name", "").strip()
-        last_name = request.POST.get("last_name", "").strip()
         email = request.POST.get("email", "").strip().lower()
+        department_id = request.POST.get("department_id", "").strip()
+        access_code = request.POST.get("access_code", "").strip()
 
         # Validate basic input first.
-        if not first_name or not last_name or not email:
-            messages.error(request, "First name, last name, and email are required.")
+        if not email or not department_id or not access_code:
+            messages.error(request, "Email, department, and access code are required.")
             return redirect("inventory_login")
 
         try:
@@ -100,41 +143,71 @@ def inventory_login_view(request):
             messages.error(request, "Please enter a valid email address.")
             return redirect("inventory_login")
 
-        # User is allowed if their email is active in manager-approved allowed list.
-        authorized_users = DepartmentAuthorizedUser.objects.filter(
-            email__iexact=email,
-            is_active=True,
-        ).select_related("department")
-
-        if not authorized_users.exists():
-            messages.error(request, "Access not granted for this email. Ask manager to grant your email access.")
+        try:
+            department_id_int = int(department_id)
+        except (TypeError, ValueError):
+            messages.error(request, "Please select a valid department.")
             return redirect("inventory_login")
 
-        department_ids = list(authorized_users.values_list("department_id", flat=True).distinct())
-        department_names = list(
-            Department.objects.filter(id__in=department_ids).order_by("name").values_list("name", flat=True)
+        # Manager emails must use manager login path only.
+        if ManagerAccount.objects.filter(email__iexact=email, is_active=True).exists():
+            messages.error(request, "Manager accounts must login from Manager login.")
+            return redirect("manager_login")
+
+        authorized_user = (
+            DepartmentAuthorizedUser.objects.select_related("department")
+            .filter(
+                email__iexact=email,
+                department_id=department_id_int,
+                is_active=True,
+            )
+            .first()
         )
+        if not authorized_user:
+            messages.error(request, "Access not granted for this email in the selected department.")
+            return redirect("inventory_login")
+
+        # Department login code must match an active manager account that owns this department.
+        manager_accounts = ManagerAccount.objects.filter(
+            is_active=True,
+            departments__id=department_id_int,
+        ).distinct()
+        if not manager_accounts.exists():
+            messages.error(request, "No manager access code is configured for this department.")
+            return redirect("inventory_login")
+
+        code_is_valid = any(manager.check_access_code(access_code) for manager in manager_accounts)
+        if not code_is_valid:
+            messages.error(request, "Invalid department access code.")
+            return redirect("inventory_login")
+
+        department_ids = [department_id_int]
+        department_names = [authorized_user.department.name]
 
         # Save user identity in session for audit tracking on inventory updates.
         request.session["inventory_user"] = {
-            "first_name": first_name,
-            "last_name": last_name,
+            "first_name": authorized_user.first_name,
+            "last_name": authorized_user.last_name,
             "email": email,
             "department_ids": department_ids,
             "department_names": department_names,
         }
         request.session.set_expiry(60 * 30)
 
-        messages.success(request, f"Logged in as {first_name} {last_name}. Authorized by email: {email}.")
+        messages.success(request, f"Logged in as {authorized_user.first_name} {authorized_user.last_name}. Department: {authorized_user.department.name}.")
         return redirect("inventory_manage")
 
-    return _render_template(request, "login.html")
+    context = {
+        "departments": Department.objects.select_related("building").all().order_by("name"),
+    }
+    return _render_template(request, "login.html", context)
 
 def inventory_logout_view(request):
-    # Remove inventory session identity.
-    # This ensures the next stock action cannot be tied to the previous user accidentally.
+    # Remove all app-level login sessions (inventory user, manager login, and admin unlock session).
     request.session.pop("inventory_user", None)
-    messages.success(request, "You have been logged out from inventory access.")
+    request.session.pop("inventory_manager_account_id", None)
+    request.session.pop("inventory_admin_manager_setup_unlocked", None)
+    messages.success(request, "You have been logged out.")
     return redirect("inventory_login")
 
 
@@ -271,11 +344,39 @@ def upload_part_image_popup(request):
 def inventory_view(request):
 
     selected_department = request.GET.get("department")
+    selected_station = request.GET.get("station", "").strip()
 
     inventory_user = _get_inventory_session_user(request)
+    manager_account = _get_manager_session_account(request)
+    is_logged_in_inventory_scope = bool(inventory_user or manager_account)
     user_department_ids = (inventory_user or {}).get("department_ids") or []
     if not user_department_ids and (inventory_user or {}).get("department_id"):
         user_department_ids = [(inventory_user or {}).get("department_id")]
+
+    allowed_department_ids = _get_allowed_department_ids(request)
+
+    if is_logged_in_inventory_scope:
+        if allowed_department_ids:
+            departments = Department.objects.select_related("building").filter(id__in=allowed_department_ids).order_by("name")
+        else:
+            departments = Department.objects.none()
+    else:
+        departments = Department.objects.select_related("building").all()
+
+    if selected_department and selected_department.isdigit():
+        selected_department_int = int(selected_department)
+        if is_logged_in_inventory_scope and allowed_department_ids and selected_department_int not in allowed_department_ids:
+            selected_department = ""
+
+    stations = Station.objects.select_related("department").all()
+    if selected_department and selected_department.isdigit():
+        stations = stations.filter(department_id=int(selected_department))
+    elif is_logged_in_inventory_scope and allowed_department_ids:
+        stations = stations.filter(department_id__in=allowed_department_ids)
+    stations = stations.order_by("name")
+
+    if selected_station and not stations.filter(id=selected_station).exists():
+        selected_station = ""
 
     can_upload_part_image = False
     upload_department_id = ""
@@ -284,8 +385,6 @@ def inventory_view(request):
         if selected_department_id in user_department_ids:
             can_upload_part_image = True
             upload_department_id = str(selected_department_id)
-
-    departments = Department.objects.select_related("building").all()
 
     parts = MachinePart.objects.select_related(
         "machine",
@@ -299,6 +398,8 @@ def inventory_view(request):
 
     if selected_department:
         parts = parts.filter(machine__department__id=selected_department)
+    if selected_station:
+        parts = parts.filter(machine__station_id=selected_station)
 
     table_columns = []
 
@@ -454,14 +555,20 @@ def inventory_view(request):
             "vendors": vendor_details,
         })
 
+    has_logged_session = bool(inventory_user or manager_account or request.user.is_superuser or request.session.get("inventory_admin_manager_setup_unlocked"))
+
     context = {
         "departments": departments,
+        "stations": stations,
         "selected_department": selected_department,
+        "selected_station": selected_station,
         "table_columns": table_columns,
         "data_rows": data_rows,
         "row_details": row_details,
         "can_upload_part_image": can_upload_part_image,
         "upload_department_id": upload_department_id,
+        "show_inventory_filters": is_logged_in_inventory_scope,
+        "show_public_dashboard_search": not has_logged_session,
     }
 
     return _render_template(request, "dashboard.html", context)
@@ -554,15 +661,26 @@ def inventory_search(request):
             "vendors": vendor_details,
         })
 
+    has_logged_session = bool(
+        _get_inventory_session_user(request)
+        or _get_manager_session_account(request)
+        or request.user.is_superuser
+        or request.session.get("inventory_admin_manager_setup_unlocked")
+    )
+
     context = {
         "table_columns": table_columns,
         "data_rows": data_rows,
         "row_details": row_details,
         "departments": Department.objects.all(),
+        "stations": Station.objects.none(),
         "selected_department": None,
+        "selected_station": "",
         "search_query": query,
         "can_upload_part_image": False,
         "upload_department_id": "",
+        "show_inventory_filters": False,
+        "show_public_dashboard_search": not has_logged_session,
     }
 
     return _render_template(request, "dashboard.html", context)
@@ -1411,6 +1529,15 @@ def _get_allowed_department_ids(request):
         except (TypeError, ValueError):
             continue
 
+    manager_account = _get_manager_session_account(request)
+    if manager_account:
+        manager_department_ids = manager_account.departments.values_list("id", flat=True)
+        for department_id in manager_department_ids:
+            try:
+                allowed_department_ids.add(int(department_id))
+            except (TypeError, ValueError):
+                continue
+
     return allowed_department_ids
 
 
@@ -1471,7 +1598,6 @@ def work_station_view(request):
     completed_flag = request.GET.get("done", "").strip().lower() in {"1", "true", "yes"}
     is_logged_in = bool(request.session.get("inventory_user") or request.session.get("inventory_manager_account_id"))
     is_inventory_user = bool(request.session.get("inventory_user"))
-    is_manager_only = bool(request.session.get("inventory_manager_account_id")) and not is_inventory_user
 
     selected_station = None
     selected_department = None
@@ -1479,17 +1605,13 @@ def work_station_view(request):
     station_latest_request = None
     station_default_machine_name = "-"
     just_completed = completed_flag
-    allowed_department_ids = _get_allowed_department_ids(request) if is_inventory_user else set()
+    allowed_department_ids = _get_allowed_department_ids(request)
 
     if not is_logged_in and not (scan_flag and station_id):
         messages.error(request, "Please login first.")
         return redirect("inventory_login")
 
-    if is_manager_only:
-        messages.error(request, "Managers cannot access Work Station. This page is for department users.")
-        return redirect("manager_access")
-
-    if is_inventory_user and not allowed_department_ids:
+    if not allowed_department_ids:
         messages.error(request, "No department access assigned. Ask your manager for access.")
         context = {
             "departments": Department.objects.none(),
@@ -1507,7 +1629,7 @@ def work_station_view(request):
 
     if station_id:
         station_queryset = Station.objects.select_related("department", "department__building").filter(id=station_id)
-        if is_inventory_user:
+        if is_logged_in:
             station_queryset = station_queryset.filter(department_id__in=allowed_department_ids)
         selected_station = station_queryset.first()
         if selected_station:
@@ -1522,12 +1644,12 @@ def work_station_view(request):
                 station_default_machine_name = linked_machine.name
             department_id = str(selected_department.id)
         else:
-            if is_inventory_user:
+            if is_logged_in:
                 messages.error(request, "You are not allowed to access this station.")
             else:
                 messages.error(request, "Station QR code is invalid.")
 
-    if is_inventory_user and not selected_department and department_id:
+    if not selected_department and department_id:
         selected_department = (
             Department.objects.select_related("building")
             .filter(id=department_id, id__in=allowed_department_ids)
@@ -1538,25 +1660,34 @@ def work_station_view(request):
         else:
             messages.error(request, "You are not allowed to view this department queue.")
 
-    if is_inventory_user:
-        departments = Department.objects.select_related("building").filter(id__in=allowed_department_ids).order_by("name")
-        stations = (
-            Station.objects.select_related("department", "department__building")
-            .filter(department_id__in=allowed_department_ids)
-            .order_by("department__name", "name")
-        )
-
-        work_orders = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(
-            department_id__in=allowed_department_ids
+    if not selected_department:
+        selected_department = (
+            Department.objects.select_related("building")
+            .filter(id__in=allowed_department_ids)
+            .order_by("name")
+            .first()
         )
         if selected_department:
-            work_orders = work_orders.filter(department=selected_department)
+            machine_options = Machine.objects.filter(department=selected_department).order_by("name")
+            department_id = str(selected_department.id)
 
-        work_orders = work_orders.order_by("-scanned_at")
-    else:
-        departments = Department.objects.none()
-        stations = Station.objects.none()
-        work_orders = WorkOrderRequest.objects.none()
+    departments = Department.objects.select_related("building").filter(id__in=allowed_department_ids).order_by("name")
+
+    stations = Station.objects.select_related("department", "department__building").filter(
+        department_id__in=allowed_department_ids
+    )
+    if selected_department:
+        stations = stations.filter(department=selected_department)
+    stations = stations.order_by("department__name", "name")
+
+    work_orders = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(
+        department_id__in=allowed_department_ids
+    )
+    if selected_department:
+        work_orders = work_orders.filter(department=selected_department)
+    if selected_station:
+        work_orders = work_orders.filter(station=selected_station)
+    work_orders = work_orders.order_by("-scanned_at")
 
     if selected_station and not station_latest_request:
         station_latest_request = (
@@ -1569,14 +1700,15 @@ def work_station_view(request):
             .first()
         )
 
-    if is_inventory_user:
-        active_alerts = list(
-            WorkOrderRequest.objects.select_related("department", "station", "machine")
-            .filter(status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING], department_id__in=allowed_department_ids)
-            .order_by("-scanned_at")
-        )
-    else:
-        active_alerts = []
+    active_alerts = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(
+        status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING],
+        department_id__in=allowed_department_ids,
+    )
+    if selected_department:
+        active_alerts = active_alerts.filter(department=selected_department)
+    if selected_station:
+        active_alerts = active_alerts.filter(station=selected_station)
+    active_alerts = list(active_alerts.order_by("-scanned_at"))
 
     is_scanner_view = bool(scan_flag and selected_station)
 
@@ -1601,6 +1733,7 @@ def work_station_view(request):
 def work_station_live_status(request):
     station_id = request.GET.get("station_id", "").strip()
     department_id = request.GET.get("department_id", "").strip()
+    filter_station_id = request.GET.get("filter_station_id", "").strip()
 
     if station_id:
         station = Station.objects.select_related("department", "department__building").filter(id=station_id).first()
@@ -1635,25 +1768,37 @@ def work_station_live_status(request):
             }
         )
 
-    if not request.session.get("inventory_user"):
-        return JsonResponse({"ok": False, "message": "Login required."}, status=403)
-
     allowed_department_ids = _get_allowed_department_ids(request)
     if not allowed_department_ids:
-        return JsonResponse({"ok": True, "alerts": [], "work_orders": [], "now": timezone.localtime(timezone.now(), NC_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p ET")})
+        return JsonResponse({"ok": False, "message": "Login required."}, status=403)
+
+    if department_id:
+        try:
+            requested_department_id = int(department_id)
+        except ValueError:
+            return JsonResponse({"ok": False, "message": "Invalid department filter."}, status=400)
+        if requested_department_id not in allowed_department_ids:
+            return JsonResponse({"ok": False, "message": "Not allowed for this department."}, status=403)
 
     work_orders = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(
         department_id__in=allowed_department_ids
     )
     if department_id:
         work_orders = work_orders.filter(department_id=department_id)
+    if filter_station_id:
+        work_orders = work_orders.filter(station_id=filter_station_id)
     work_orders = work_orders.order_by("-scanned_at")[:120]
 
     active_alerts = (
         WorkOrderRequest.objects.select_related("department", "station", "machine")
         .filter(status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING], department_id__in=allowed_department_ids)
-        .order_by("-scanned_at")[:50]
+        .order_by("-scanned_at")
     )
+    if department_id:
+        active_alerts = active_alerts.filter(department_id=department_id)
+    if filter_station_id:
+        active_alerts = active_alerts.filter(station_id=filter_station_id)
+    active_alerts = active_alerts[:50]
 
     return JsonResponse(
         {

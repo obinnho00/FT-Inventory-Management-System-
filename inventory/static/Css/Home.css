@@ -32,7 +32,7 @@ body {
     position: fixed;
     top: 0;
     left: 0;
-    z-index: 1000;
+    z-index: 5000;
 }
 
 /* ============================= */
@@ -132,11 +132,21 @@ body {
 /* ============================= */
 main {
     padding: 0;
-    margin-top: 150px;
-    height: calc(100vh - 150px);
+    margin-top: 70px;
+    height: calc(100vh - 70px);
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-width: none;
+}
+
+body.has-header-search main {
+    margin-top: 150px;
+    height: calc(100vh - 150px);
+}
+
+body.no-header-search main {
+    margin-top: 70px;
+    height: calc(100vh - 70px);
 }
 
 main::-webkit-scrollbar {
