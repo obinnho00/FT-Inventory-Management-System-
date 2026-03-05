@@ -1,37 +1,43 @@
-{% extends "base.html" %}
-
-{% block title %}Station Help | ABB Inventory System{% endblock %}
-
-{% block extra_css %}
-<style>
-    body { background: #0f172a; }
-    .scanner-wrap { max-width: 680px; margin: 22px auto; padding: 0 14px 24px; color: #e2e8f0; }
-    .scanner-card { background: rgba(30,41,59,0.95); border: 1px solid rgba(255,255,255,0.16); border-radius: 14px; padding: 18px; }
-    .scanner-title { margin: 0 0 10px; text-align: center; color: #fff; font-size: 22px; }
-    .line { margin: 6px 0; color: #cbd5e1; font-size: 14px; }
-    .line-time { margin: 6px 0; color: #93c5fd; font-size: 13px; }
-    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
-    .btn { border: none; border-radius: 10px; padding: 12px 14px; font-size: 15px; font-weight: 600; cursor: pointer; }
-    .btn-call { background: #2563eb; color: #fff; }
-    .btn-cancel { background: #ef4444; color: #fff; }
-    .btn-complete { background: #0ea5e9; color: #fff; }
-    .screen { margin-top: 14px; border-radius: 14px; padding: 22px; text-align: center; }
-    .screen h2 { margin: 0 0 8px; color: #fff; font-size: 30px; }
-    .screen p { margin: 0; color: #e2e8f0; font-size: 16px; }
-    .coming { background: linear-gradient(135deg, #15803d, #22c55e); border: 1px solid rgba(187,247,208,0.7); }
-    .done { background: linear-gradient(135deg, #0891b2, #22d3ee); border: 1px solid rgba(186,230,253,0.7); }
-    .cancelled { background: linear-gradient(135deg, #b91c1c, #ef4444); border: 1px solid rgba(254,202,202,0.7); }
-    .pending { background: linear-gradient(135deg, #991b1b, #dc2626); border: 1px solid rgba(254,202,202,0.7); }
-    .msg-list { margin: 0 0 12px; padding: 0; list-style: none; }
-    .msg-list li { padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
-    .msg-list li.success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); }
-    .msg-list li.error { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5); }
-    .msg-list li.info { background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.5); }
-</style>
-{% endblock %}
-
-{% block content %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Station Help | ABB Inventory System</title>
+    <style>
+        body { background: #0f172a; margin: 0; font-family: Arial, sans-serif; }
+        .scanner-wrap { max-width: 680px; margin: 22px auto; padding: 0 14px 24px; color: #e2e8f0; }
+        .logo-wrap { text-align: center; margin: 8px 0 12px; }
+        .logo-image { width: 110px; max-width: 100%; height: auto; }
+        .scanner-card { background: rgba(30,41,59,0.95); border: 1px solid rgba(255,255,255,0.16); border-radius: 14px; padding: 18px; }
+        .scanner-title { margin: 0 0 10px; text-align: center; color: #fff; font-size: 22px; }
+        .line { margin: 6px 0; color: #cbd5e1; font-size: 14px; }
+        .line-time { margin: 6px 0; color: #93c5fd; font-size: 13px; }
+        .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+        .btn { border: none; border-radius: 10px; padding: 12px 14px; font-size: 15px; font-weight: 600; cursor: pointer; }
+        .btn-call { background: #2563eb; color: #fff; }
+        .btn-cancel { background: #ef4444; color: #fff; }
+        .btn-complete { background: #0ea5e9; color: #fff; }
+        .screen { margin-top: 14px; border-radius: 14px; padding: 22px; text-align: center; }
+        .screen h2 { margin: 0 0 8px; color: #fff; font-size: 30px; }
+        .screen p { margin: 0; color: #e2e8f0; font-size: 16px; }
+        .coming { background: linear-gradient(135deg, #15803d, #22c55e); border: 1px solid rgba(187,247,208,0.7); }
+        .done { background: linear-gradient(135deg, #0891b2, #22d3ee); border: 1px solid rgba(186,230,253,0.7); }
+        .cancelled { background: linear-gradient(135deg, #b91c1c, #ef4444); border: 1px solid rgba(254,202,202,0.7); }
+        .pending { background: linear-gradient(135deg, #991b1b, #dc2626); border: 1px solid rgba(254,202,202,0.7); }
+        .msg-list { margin: 0 0 12px; padding: 0; list-style: none; }
+        .msg-list li { padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
+        .msg-list li.success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); }
+        .msg-list li.error { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5); }
+        .msg-list li.info { background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.5); }
+    </style>
+</head>
+<body>
 <div class="scanner-wrap">
+    <div class="logo-wrap">
+        <img src="{% static 'image/Abblogo.png' %}" alt="ABB Logo" class="logo-image">
+    </div>
     {% if messages %}
     <ul class="msg-list">
         {% for message in messages %}
@@ -116,9 +122,6 @@
     </section>
     {% endif %}
 </div>
-{% endblock %}
-
-{% block extra_js %}
 {% if selected_station %}
 <script>
 (() => {
@@ -232,4 +235,5 @@
 })();
 </script>
 {% endif %}
-{% endblock %}
+</body>
+</html>
