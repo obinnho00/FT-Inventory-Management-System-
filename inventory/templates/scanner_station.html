@@ -73,7 +73,7 @@
         {% endif %}
 
         <div class="actions">
-            <form method="post" action="{% url 'work_station_scan_call' %}" class="js-scanner-action js-scanner-call">
+            <form method="post" action="{% url 'work_station_scan_call' %}" class="js-scanner-action" id="scannerCallForm">
                 {% csrf_token %}
                 <input type="hidden" name="station_id" value="{{ selected_station.id }}">
                 <button class="btn btn-call" type="submit">Call Engineering</button>
@@ -84,6 +84,10 @@
                 <button class="btn btn-cancel" type="submit">Cancel Call</button>
             </form>
         </div>
+            <div class="usage-field" style="grid-column: 1 / -1; margin-bottom: 10px;">
+                <label for="scannerRequestMessage">Request message</label>
+                <textarea id="scannerRequestMessage" name="message" form="scannerCallForm" rows="5" cols="5" style="width:100%; box-sizing:border-box; padding:10px 11px; border-radius:7px; border:1px solid rgba(255,255,255,0.22); background:#0f1d2d; color:#fff; font-size:14px; resize:vertical;" placeholder="Describe the issue for engineering...">Station needs help.</textarea>
+            </div>
         <div class="actions" style="margin-top:10px;">
             <form method="post" action="{% url 'work_station_scan_complete' %}" class="js-scanner-action js-scanner-complete" style="grid-column: 1 / -1;">
                 {% csrf_token %}
@@ -151,7 +155,7 @@
 </div>
 {% if selected_station %}
 <script>
-(async () => {
+(() => {
     const stationId = "{{ selected_station.id }}";
     const statusEl = document.getElementById("scannerStatus");
     const machineEl = document.getElementById("scannerMachine");
@@ -172,7 +176,6 @@
     const scannerUsageSaveBtn = document.getElementById("scannerUsageSaveBtn");
     const scannerUsageMachine = document.getElementById("scannerUsageMachine");
     const completeForm = document.querySelector(".js-scanner-complete");
-    const callForm = document.querySelector(".js-scanner-call");
     const initialStatus = "{% if just_completed %}COMPLETED{% elif station_latest_request and station_latest_request.status == 'NEW' %}NEW{% elif station_latest_request and station_latest_request.status == 'COMING' %}COMING{% else %}{% endif %}";
     let hadActiveRequestInSession = initialStatus === "NEW" || initialStatus === "COMING";
 
@@ -370,9 +373,6 @@
     }
 
     updateScreens(initialStatus);
-    if (!initialStatus && callForm) {
-        await postAction(callForm);
-    }
     refreshScannerStatus();
     setInterval(refreshScannerStatus, 3000);
 })();

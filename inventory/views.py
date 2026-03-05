@@ -2186,6 +2186,7 @@ def work_station_scan_call(request):
         return redirect("work_station")
 
     station_id = request.POST.get("station_id", "").strip()
+    request_message = request.POST.get("message", "").strip()
     if not station_id:
         messages.error(request, "Station is required.")
         return redirect("work_station")
@@ -2220,7 +2221,7 @@ def work_station_scan_call(request):
         station=station,
         department=station.department,
         machine=linked_machine,
-        message="Station needs help.",
+        message=request_message or "Station needs help.",
         priority=WorkOrderRequest.PRIORITY_MEDIUM,
         status=WorkOrderRequest.STATUS_NEW,
     )
