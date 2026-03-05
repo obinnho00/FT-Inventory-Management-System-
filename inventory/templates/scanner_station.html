@@ -171,7 +171,7 @@
     const scannerUsageSaveBtn = document.getElementById("scannerUsageSaveBtn");
     const scannerUsageMachine = document.getElementById("scannerUsageMachine");
     const completeForm = document.querySelector(".js-scanner-complete");
-    const initialStatus = "{% if just_completed %}COMPLETED{% elif station_latest_request %}{{ station_latest_request.status }}{% else %}{% endif %}";
+    const initialStatus = "{% if just_completed %}COMPLETED{% elif station_latest_request and station_latest_request.status == 'NEW' %}NEW{% elif station_latest_request and station_latest_request.status == 'COMING' %}COMING{% else %}{% endif %}";
 
     function updateScreens(status) {
         if (!doneScreen || !comingScreen || !pendingScreen || !cancelledScreen) return;

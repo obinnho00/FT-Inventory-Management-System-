@@ -1511,7 +1511,10 @@ def work_station_view(request):
 
     if selected_station and not station_latest_request:
         station_latest_request = (
-            WorkOrderRequest.objects.filter(station=selected_station)
+            WorkOrderRequest.objects.filter(
+                station=selected_station,
+                status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING],
+            )
             .select_related("department", "station", "machine")
             .order_by("-scanned_at")
             .first()
