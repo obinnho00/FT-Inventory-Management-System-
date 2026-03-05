@@ -2053,6 +2053,114 @@ def work_station_scan_cancel(request):
     return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1")
 
 
+def work_station_scan_machine_parts(request):
+    station_id = request.GET.get("station_id", "").strip()
+    if not station_id:
+        return JsonResponse({"ok": False, "message": "Station is required."}, status=400)
+
+    station = Station.objects.select_related("department").filter(id=station_id).first()
+    if not station:
+        return JsonResponse({"ok": False, "message": "Station was not found."}, status=404)
+
+    work_order = (
+        WorkOrderRequest.objects.select_related("station", "department", "machine")
+        .filter(station=station, status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING])
+        .order_by("-scanned_at")
+        .first()
+    )
+
+    target_machine = (work_order.machine if work_order and work_order.machine else _resolve_station_machine(station))
+    if not target_machine:
+        return JsonResponse({"ok": False, "message": "No machine is linked to this station.", "parts": []}, status=200)
+
+    machine_parts = MachinePart.objects.select_related("part").filter(machine=target_machine).order_by("part__name")
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "machine": {"id": target_machine.id, "name": target_machine.name},
+            "parts": [
+                {
+                    "machine_part_id": row.id,
+                    "part_name": row.part.name,
+                    "model_number": row.part.model_number,
+                    "quantity_left": row.quantity_left,
+                }
+                for row in machine_parts
+            ],
+        }
+    )
+
+
+def work_station_scan_record_usage(request):
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "message": "POST required."}, status=405)
+
+    station_id = request.POST.get("station_id", "").strip()
+    machine_part_id = request.POST.get("machine_part_id", "").strip()
+    used_quantity = request.POST.get("used_quantity", "").strip()
+
+    if not station_id or not machine_part_id or not used_quantity:
+        return JsonResponse({"ok": False, "message": "Station, part, and used quantity are required."}, status=400)
+
+    try:
+        used_value = int(used_quantity)
+        if used_value <= 0:
+            raise ValueError()
+    except ValueError:
+        return JsonResponse({"ok": False, "message": "Used quantity must be greater than 0."}, status=400)
+
+    station = Station.objects.select_related("department").filter(id=station_id).first()
+    if not station:
+        return JsonResponse({"ok": False, "message": "Station was not found."}, status=404)
+
+    work_order = (
+        WorkOrderRequest.objects.select_related("station", "department", "machine")
+        .filter(station=station, status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING])
+        .order_by("-scanned_at")
+        .first()
+    )
+    if not work_order:
+        return JsonResponse({"ok": False, "message": "No active request found for this station."}, status=400)
+
+    target_machine = work_order.machine or _resolve_station_machine(station)
+    if not target_machine:
+        return JsonResponse({"ok": False, "message": "No machine is linked to this station/request."}, status=400)
+
+    machine_part = MachinePart.objects.select_related("machine", "part").filter(id=machine_part_id).first()
+    if not machine_part:
+        return JsonResponse({"ok": False, "message": "Selected machine part was not found."}, status=404)
+
+    if machine_part.machine_id != target_machine.id:
+        return JsonResponse({"ok": False, "message": "Selected part does not belong to this machine."}, status=400)
+
+    if used_value > machine_part.quantity_left:
+        return JsonResponse({"ok": False, "message": f"Cannot use {used_value}. Available quantity is {machine_part.quantity_left}."}, status=400)
+
+    machine_part.quantity_left -= used_value
+    machine_part.last_action_by_first_name = "Operator"
+    machine_part.last_action_by_last_name = "Scanner"
+    machine_part.last_action_type = "USED"
+    machine_part.last_used_quantity = used_value
+    machine_part.last_action_at = timezone.now()
+    machine_part.save(
+        update_fields=[
+            "quantity_left",
+            "last_action_by_first_name",
+            "last_action_by_last_name",
+            "last_action_type",
+            "last_used_quantity",
+            "last_action_at",
+        ]
+    )
+
+    if not work_order.machine_id:
+        work_order.machine = target_machine
+        work_order.save(update_fields=["machine"])
+
+    return JsonResponse({"ok": True, "message": f"Used {used_value} from {machine_part.part.name} on {machine_part.machine.name}. Remaining: {machine_part.quantity_left}."})
+
+
 def work_station_scan_complete(request):
     if request.method != "POST":
         return redirect("work_station")

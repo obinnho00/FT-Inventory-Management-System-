@@ -31,6 +31,16 @@
         .msg-list li.success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); }
         .msg-list li.error { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5); }
         .msg-list li.info { background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.5); }
+        .usage-modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(2,6,23,0.72); z-index: 10000; }
+        .usage-card { width: min(560px, 92vw); background: #1e293b; border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; padding: 16px; }
+        .usage-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 10px; }
+        .usage-head h3 { margin:0; color:#fff; font-size: 18px; }
+        .usage-close { border:none; border-radius:6px; background:#475569; color:#fff; padding: 6px 10px; cursor:pointer; }
+        .usage-note { margin: 4px 0 10px; color:#cbd5e1; font-size:13px; }
+        .usage-field { margin-bottom: 10px; }
+        .usage-field label { display:block; margin-bottom:6px; color:#cbd5e1; font-size:13px; }
+        .usage-field input, .usage-field select { width:100%; box-sizing:border-box; padding:10px 11px; border-radius:7px; border:1px solid rgba(255,255,255,0.22); background:#0f1d2d; color:#fff; font-size:14px; }
+        .usage-actions { display:flex; justify-content:flex-end; margin-top:12px; }
     </style>
 </head>
 <body>
@@ -75,7 +85,7 @@
             </form>
         </div>
         <div class="actions" style="margin-top:10px;">
-            <form method="post" action="{% url 'work_station_scan_complete' %}" class="js-scanner-action" style="grid-column: 1 / -1;">
+            <form method="post" action="{% url 'work_station_scan_complete' %}" class="js-scanner-action js-scanner-complete" style="grid-column: 1 / -1;">
                 {% csrf_token %}
                 <input type="hidden" name="station_id" value="{{ selected_station.id }}">
                 <button class="btn btn-complete" type="submit">Work Completed</button>
@@ -83,22 +93,6 @@
         </div>
     </section>
 
-    {% if just_completed %}
-    <section class="screen done" id="doneScreen">
-        <h2>Work Completed</h2>
-        <p>Issue resolved and completion recorded.</p>
-    </section>
-    {% elif station_latest_request and station_latest_request.status == 'NEW' %}
-    <section class="screen pending" id="pendingScreen">
-        <h2>REQUEST SENT</h2>
-        <p>Not accepted yet. Waiting for engineering to accept.</p>
-    </section>
-    {% elif station_latest_request and station_latest_request.status == 'COMING' %}
-    <section class="screen coming" id="comingScreen">
-        <h2>COMING</h2>
-        <p id="comingEngineerText">{{ station_latest_request.technician_first_name }} {{ station_latest_request.technician_last_name }} is on the way to this station.</p>
-    </section>
-    {% endif %}
     <section class="screen done" id="doneScreen" style="display:none;">
         <h2>Work Completed</h2>
         <p>Issue resolved and completion recorded.</p>
@@ -115,6 +109,38 @@
         <h2>CANCELLED</h2>
         <p>The help call was cancelled.</p>
     </section>
+
+    <div class="usage-modal" id="scannerUsageModal" aria-hidden="true">
+        <div class="usage-card">
+            <div class="usage-head">
+                <h3>Inventory Usage</h3>
+                <button type="button" class="usage-close" id="scannerUsageClose">Close</button>
+            </div>
+            <p class="usage-note" id="scannerUsageMachine">Machine: -</p>
+            <div class="usage-field">
+                <label for="scannerUsedSelect">Did you use/replace any part?</label>
+                <select id="scannerUsedSelect">
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                </select>
+            </div>
+            <div id="scannerUsageFields" style="display:none;">
+                <div class="usage-field">
+                    <label for="scannerPartSelect">Part (for this station machine only)</label>
+                    <select id="scannerPartSelect">
+                        <option value="">Select part</option>
+                    </select>
+                </div>
+                <div class="usage-field">
+                    <label for="scannerQtyInput">How many used</label>
+                    <input id="scannerQtyInput" type="number" min="1" step="1" placeholder="e.g. 2">
+                </div>
+            </div>
+            <div class="usage-actions">
+                <button type="button" class="btn btn-complete" id="scannerUsageSaveBtn">Submit & Complete</button>
+            </div>
+        </div>
+    </div>
     {% else %}
     <section class="scanner-card">
         <h1 class="scanner-title">Invalid Station QR</h1>
@@ -136,6 +162,16 @@
     const pendingScreen = document.getElementById("pendingScreen");
     const cancelledScreen = document.getElementById("cancelledScreen");
     const comingEngineerText = document.getElementById("comingEngineerText");
+    const scannerUsageModal = document.getElementById("scannerUsageModal");
+    const scannerUsageClose = document.getElementById("scannerUsageClose");
+    const scannerUsedSelect = document.getElementById("scannerUsedSelect");
+    const scannerUsageFields = document.getElementById("scannerUsageFields");
+    const scannerPartSelect = document.getElementById("scannerPartSelect");
+    const scannerQtyInput = document.getElementById("scannerQtyInput");
+    const scannerUsageSaveBtn = document.getElementById("scannerUsageSaveBtn");
+    const scannerUsageMachine = document.getElementById("scannerUsageMachine");
+    const completeForm = document.querySelector(".js-scanner-complete");
+    const initialStatus = "{% if just_completed %}COMPLETED{% elif station_latest_request %}{{ station_latest_request.status }}{% else %}{% endif %}";
 
     function updateScreens(status) {
         if (!doneScreen || !comingScreen || !pendingScreen || !cancelledScreen) return;
@@ -149,15 +185,61 @@
                 scannerCard.style.display = "none";
             }
             setTimeout(() => {
-                try {
-                    window.close();
-                } catch (error) {
-                }
                 window.location.href = "{% url 'work_station_scanner_expired' %}";
-            }, 1200);
+            }, 150);
         } else if (scannerCard) {
             scannerCard.style.display = "block";
         }
+    }
+
+    function closeUsageModal() {
+        if (scannerUsageModal) {
+            scannerUsageModal.style.display = "none";
+        }
+    }
+
+    async function loadScannerMachineParts() {
+        const response = await fetch(`{% url 'work_station_scan_machine_parts' %}?station_id=${encodeURIComponent(stationId)}`, {
+            headers: { "X-Requested-With": "XMLHttpRequest" }
+        });
+        const data = await response.json().catch(() => ({ ok: false, message: "Failed to load machine parts." }));
+        if (!data.ok) {
+            if (scannerUsageMachine) {
+                scannerUsageMachine.textContent = `Machine: ${data.message || "-"}`;
+            }
+            scannerPartSelect.innerHTML = '<option value="">No parts available</option>';
+            return;
+        }
+        if (scannerUsageMachine) {
+            scannerUsageMachine.textContent = `Machine: ${data.machine && data.machine.name ? data.machine.name : "-"}`;
+        }
+        const options = (data.parts || []).map((row) => (
+            `<option value="${row.machine_part_id}">${row.part_name} (${row.model_number}) - Qty: ${row.quantity_left}</option>`
+        )).join("");
+        scannerPartSelect.innerHTML = '<option value="">Select part</option>' + options;
+    }
+
+    async function submitScannerUsageIfNeeded() {
+        if (!scannerUsedSelect || scannerUsedSelect.value !== "yes") return { ok: true };
+        const partId = scannerPartSelect ? scannerPartSelect.value : "";
+        const qty = scannerQtyInput ? scannerQtyInput.value : "";
+        if (!partId || !qty) {
+            return { ok: false, message: "Select a part and enter used quantity." };
+        }
+        const payload = new URLSearchParams();
+        payload.set("station_id", stationId);
+        payload.set("machine_part_id", partId);
+        payload.set("used_quantity", qty);
+        const response = await fetch("{% url 'work_station_scan_record_usage' %}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-Requested-With": "XMLHttpRequest",
+                "X-CSRFToken": "{{ csrf_token }}",
+            },
+            body: payload.toString(),
+        });
+        return await response.json().catch(() => ({ ok: false, message: "Failed to save usage." }));
     }
 
     async function refreshScannerStatus() {
@@ -226,10 +308,53 @@
     document.querySelectorAll(".js-scanner-action").forEach((form) => {
         form.addEventListener("submit", async (event) => {
             event.preventDefault();
+            if (form.classList.contains("js-scanner-complete")) {
+                if (scannerUsageModal) {
+                    scannerUsedSelect.value = "no";
+                    scannerUsageFields.style.display = "none";
+                    scannerQtyInput.value = "";
+                    scannerUsageModal.style.display = "flex";
+                    await loadScannerMachineParts();
+                } else {
+                    await postAction(form);
+                }
+                return;
+            }
             await postAction(form);
         });
     });
 
+    if (scannerUsedSelect) {
+        scannerUsedSelect.addEventListener("change", () => {
+            scannerUsageFields.style.display = scannerUsedSelect.value === "yes" ? "block" : "none";
+        });
+    }
+
+    if (scannerUsageClose) {
+        scannerUsageClose.addEventListener("click", closeUsageModal);
+    }
+
+    if (scannerUsageModal) {
+        scannerUsageModal.addEventListener("click", (event) => {
+            if (event.target === scannerUsageModal) {
+                closeUsageModal();
+            }
+        });
+    }
+
+    if (scannerUsageSaveBtn && completeForm) {
+        scannerUsageSaveBtn.addEventListener("click", async () => {
+            const usageResult = await submitScannerUsageIfNeeded();
+            if (!usageResult.ok) {
+                window.alert(usageResult.message || "Could not save inventory usage.");
+                return;
+            }
+            closeUsageModal();
+            await postAction(completeForm);
+        });
+    }
+
+    updateScreens(initialStatus);
     refreshScannerStatus();
     setInterval(refreshScannerStatus, 3000);
 })();
