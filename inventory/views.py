@@ -2178,15 +2178,15 @@ def work_station_scan_complete(request):
     work_order = (
         WorkOrderRequest.objects.filter(
             station_id=station_id,
-            status=WorkOrderRequest.STATUS_COMING,
+            status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING],
         )
         .order_by("-scanned_at")
         .first()
     )
     if not work_order:
         if _is_ajax_request(request):
-            return JsonResponse({"ok": False, "message": "No COMING request found to complete."}, status=400)
-        messages.info(request, "No COMING request found to complete.")
+            return JsonResponse({"ok": False, "message": "No active request found to complete."}, status=400)
+        messages.info(request, "No active request found to complete.")
         return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1")
 
     actor = _get_actor_identity(request)

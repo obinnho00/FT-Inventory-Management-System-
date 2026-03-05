@@ -120,8 +120,9 @@
             <div class="usage-field">
                 <label for="scannerUsedSelect">Did you use/replace any part?</label>
                 <select id="scannerUsedSelect">
-                    <option value="no">No</option>
+                    <option value="">Select an option</option>
                     <option value="yes">Yes</option>
+                    <option value="no">No</option>
                 </select>
             </div>
             <div id="scannerUsageFields" style="display:none;">
@@ -310,7 +311,7 @@
             event.preventDefault();
             if (form.classList.contains("js-scanner-complete")) {
                 if (scannerUsageModal) {
-                    scannerUsedSelect.value = "no";
+                    scannerUsedSelect.value = "";
                     scannerUsageFields.style.display = "none";
                     scannerQtyInput.value = "";
                     scannerUsageModal.style.display = "flex";
@@ -344,6 +345,10 @@
 
     if (scannerUsageSaveBtn && completeForm) {
         scannerUsageSaveBtn.addEventListener("click", async () => {
+            if (!scannerUsedSelect || !scannerUsedSelect.value) {
+                window.alert("Please answer if you used inventory before completing.");
+                return;
+            }
             const usageResult = await submitScannerUsageIfNeeded();
             if (!usageResult.ok) {
                 window.alert(usageResult.message || "Could not save inventory usage.");
