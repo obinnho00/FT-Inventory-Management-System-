@@ -55,6 +55,15 @@
 	.tag-status-coming { background: rgba(16,185,129,0.25); color: #a7f3d0; border: 1px solid rgba(16,185,129,0.5); }
 	.tag-status-completed { background: rgba(107,114,128,0.25); color: #d1d5db; border: 1px solid rgba(107,114,128,0.5); }
 	.tag-status-cancelled { background: rgba(239,68,68,0.22); color: #fecaca; border: 1px solid rgba(239,68,68,0.5); }
+	.machine-link-btn { border: 1px solid rgba(147,197,253,0.5); background: rgba(30,58,138,0.25); color: #bfdbfe; border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
+	.machine-link-btn:hover { background: rgba(37,99,235,0.35); }
+	.usage-modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(2,6,23,0.7); z-index: 10000; }
+	.usage-modal-card { width: min(560px, 92vw); background: #1e293b; border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; padding: 16px; }
+	.usage-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+	.usage-modal-head h4 { margin: 0; color: #fff; font-size: 18px; }
+	.usage-close { border: none; border-radius: 6px; background: #475569; color: #fff; padding: 6px 10px; cursor: pointer; }
+	.usage-note { margin: 6px 0 12px; color: #cbd5e1; font-size: 13px; }
+	.usage-actions { margin-top: 14px; display: flex; gap: 10px; justify-content: flex-end; }
 	@media (max-width: 980px) { .panel-grid { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
@@ -143,7 +152,13 @@
 				<h4>{{ alert.station.name }} needs help</h4>
 				<p class="alert-line"><strong>Status:</strong> {{ alert.get_status_display }}</p>
 				<p class="alert-line"><strong>Department:</strong> {{ alert.department.name }} ({{ alert.department.building.name }})</p>
-				<p class="alert-line"><strong>Machine:</strong> {{ alert.machine.name|default:'Not specified' }}</p>
+				<p class="alert-line"><strong>Machine:</strong>
+					{% if alert.machine %}
+					<button type="button" class="machine-link-btn js-machine-link" data-work-order-id="{{ alert.id }}" data-machine-name="{{ alert.machine.name }}">{{ alert.machine.name }}</button>
+					{% else %}
+					Not specified
+					{% endif %}
+				</p>
 				<p class="alert-line"><strong>Priority:</strong> {{ alert.get_priority_display }}</p>
 				<p class="alert-line"><strong>Scanned:</strong> {{ alert.scanned_at }}</p>
 				<p class="alert-line"><strong>Message:</strong> {{ alert.message|default:'Station needs help.' }}</p>
@@ -164,7 +179,11 @@
 	</section>
 
 	<section class="table-panel">
-		<h3>Department Work Requests</h3>
+		<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;">
+			<h3 style="margin:0;">Department Work Requests</h3>
+			<button type="button" class="btn" id="toggleWorkRequestsBtn">Collapse</button>
+		</div>
+		<div id="workRequestsPanelBody">
 		<table class="wo-table" id="workOrdersTable">
 			<thead>
 				<tr>
@@ -207,7 +226,13 @@
 					<td>{{ item.department.name }}</td>
 					<td>{{ item.department.building.name }}</td>
 					<td>{{ item.station.name }}</td>
-					<td>{{ item.machine.name|default:'-' }}</td>
+					<td>
+						{% if item.machine %}
+						<button type="button" class="machine-link-btn js-machine-link" data-work-order-id="{{ item.id }}" data-machine-name="{{ item.machine.name }}">{{ item.machine.name }}</button>
+						{% else %}
+						-
+						{% endif %}
+					</td>
 					<td>{{ item.message|default:'-' }}</td>
 					<td>{{ item.scanned_at }}</td>
 					<td>{{ item.accepted_at|default:'-' }}</td>
@@ -238,7 +263,40 @@
 				{% endfor %}
 			</tbody>
 		</table>
+		</div>
 	</section>
+
+	<div class="usage-modal" id="machineUsageModal" aria-hidden="true">
+		<div class="usage-modal-card">
+			<div class="usage-modal-head">
+				<h4>Machine Part Usage</h4>
+				<button type="button" class="usage-close" id="usageCloseBtn">Close</button>
+			</div>
+			<p class="usage-note" id="usageMachineText">Machine: -</p>
+			<div class="field">
+				<label for="usageReplacedSelect">Did you replace/use any part?</label>
+				<select id="usageReplacedSelect">
+					<option value="no">No</option>
+					<option value="yes">Yes</option>
+				</select>
+			</div>
+			<div id="usagePartFields" style="display:none;">
+				<div class="field">
+					<label for="usagePartSelect">Part (only for this machine)</label>
+					<select id="usagePartSelect">
+						<option value="">Select part</option>
+					</select>
+				</div>
+				<div class="field">
+					<label for="usageQtyInput">How many used</label>
+					<input id="usageQtyInput" type="number" min="1" step="1" placeholder="e.g. 2">
+				</div>
+			</div>
+			<div class="usage-actions">
+				<button type="button" class="btn" id="usageSaveBtn">Save</button>
+			</div>
+		</div>
+	</div>
 	{% endif %}
 </div>
 {% endblock %}
@@ -251,6 +309,33 @@
 	const alertGrid = document.getElementById("liveAlertGrid");
 	const workOrdersBody = document.getElementById("workOrdersBody");
 	const nowDisplay = document.getElementById("ncNowDisplay");
+	const toggleWorkRequestsBtn = document.getElementById("toggleWorkRequestsBtn");
+	const workRequestsPanelBody = document.getElementById("workRequestsPanelBody");
+	const machineUsageModal = document.getElementById("machineUsageModal");
+	const usageCloseBtn = document.getElementById("usageCloseBtn");
+	const usageMachineText = document.getElementById("usageMachineText");
+	const usageReplacedSelect = document.getElementById("usageReplacedSelect");
+	const usagePartFields = document.getElementById("usagePartFields");
+	const usagePartSelect = document.getElementById("usagePartSelect");
+	const usageQtyInput = document.getElementById("usageQtyInput");
+	const usageSaveBtn = document.getElementById("usageSaveBtn");
+	const csrfToken = "{{ csrf_token }}";
+	let activeUsageWorkOrderId = "";
+
+	function setupWorkRequestsCollapse() {
+		if (!toggleWorkRequestsBtn || !workRequestsPanelBody) return;
+		const storageKey = "abb_work_requests_collapsed";
+		const applyState = (collapsed) => {
+			workRequestsPanelBody.style.display = collapsed ? "none" : "block";
+			toggleWorkRequestsBtn.textContent = collapsed ? "Expand" : "Collapse";
+		};
+		applyState(sessionStorage.getItem(storageKey) === "1");
+		toggleWorkRequestsBtn.addEventListener("click", () => {
+			const collapsed = workRequestsPanelBody.style.display !== "none";
+			sessionStorage.setItem(storageKey, collapsed ? "1" : "0");
+			applyState(collapsed);
+		});
+	}
 
 	function statusTag(status, label) {
 		if (status === "NEW") return `<span class="tag tag-status-new">${label}</span>`;
@@ -290,6 +375,15 @@
 		return "-";
 	}
 
+	function escapeHtml(value) {
+		return String(value || "").replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+	}
+
+	function buildMachineCell(item) {
+		if (!item.machine_id) return "-";
+		return `<button type="button" class="machine-link-btn js-machine-link" data-work-order-id="${item.id}" data-machine-name="${escapeHtml(item.machine_name)}">${escapeHtml(item.machine_name)}</button>`;
+	}
+
 	function renderAlerts(alerts) {
 		if (!alertGrid) return;
 		if (!alerts.length) {
@@ -301,7 +395,7 @@
 				<h4>${item.station_name} needs help</h4>
 				<p class="alert-line"><strong>Status:</strong> ${item.status_label}</p>
 				<p class="alert-line"><strong>Department:</strong> ${item.department_name} (${item.location_name})</p>
-				<p class="alert-line"><strong>Machine:</strong> ${item.machine_name}</p>
+				<p class="alert-line"><strong>Machine:</strong> ${buildMachineCell(item)}</p>
 				<p class="alert-line"><strong>Priority:</strong> ${item.priority_label}</p>
 				<p class="alert-line"><strong>Scanned:</strong> ${item.scanned_at}</p>
 				<p class="alert-line"><strong>Message:</strong> ${item.message}</p>
@@ -309,6 +403,7 @@
 			</div>
 		`).join("");
 		bindActionForms();
+		bindMachineLinks();
 	}
 
 	function renderWorkOrders(items) {
@@ -324,7 +419,7 @@
 				<td>${item.department_name}</td>
 				<td>${item.location_name}</td>
 				<td>${item.station_name}</td>
-				<td>${item.machine_name}</td>
+				<td>${buildMachineCell(item)}</td>
 				<td>${item.message}</td>
 				<td>${item.scanned_at}</td>
 				<td>${item.accepted_at}</td>
@@ -333,6 +428,84 @@
 			</tr>
 		`).join("");
 		bindActionForms();
+		bindMachineLinks();
+	}
+
+	function openUsageModal(workOrderId, machineName) {
+		activeUsageWorkOrderId = workOrderId;
+		usageMachineText.textContent = `Machine: ${machineName || "-"}`;
+		usageReplacedSelect.value = "no";
+		usagePartFields.style.display = "none";
+		usagePartSelect.innerHTML = '<option value="">Select part</option>';
+		usageQtyInput.value = "";
+		machineUsageModal.style.display = "flex";
+		loadMachineParts(workOrderId);
+	}
+
+	function closeUsageModal() {
+		machineUsageModal.style.display = "none";
+		activeUsageWorkOrderId = "";
+	}
+
+	async function loadMachineParts(workOrderId) {
+		const response = await fetch(`{% url 'work_station_machine_parts' %}?work_order_id=${encodeURIComponent(workOrderId)}`, {
+			headers: { "X-Requested-With": "XMLHttpRequest" }
+		});
+		const data = await response.json().catch(() => ({ ok: false, message: "Failed to load parts." }));
+		if (!data.ok) {
+			usagePartSelect.innerHTML = '<option value="">No parts available</option>';
+			if (data.message) {
+				window.alert(data.message);
+			}
+			return;
+		}
+		const options = (data.parts || []).map((row) => (
+			`<option value="${row.machine_part_id}">${escapeHtml(row.part_name)} (${escapeHtml(row.model_number)}) - Qty: ${row.quantity_left}</option>`
+		)).join("");
+		usagePartSelect.innerHTML = '<option value="">Select part</option>' + options;
+	}
+
+	async function saveUsageIfNeeded() {
+		if (!activeUsageWorkOrderId) return;
+		if (usageReplacedSelect.value !== "yes") {
+			closeUsageModal();
+			return;
+		}
+		const machinePartId = usagePartSelect.value;
+		const usedQuantity = usageQtyInput.value;
+		if (!machinePartId || !usedQuantity) {
+			window.alert("Select part and enter used quantity.");
+			return;
+		}
+		const payload = new URLSearchParams();
+		payload.set("work_order_id", activeUsageWorkOrderId);
+		payload.set("machine_part_id", machinePartId);
+		payload.set("used_quantity", usedQuantity);
+		const response = await fetch("{% url 'work_station_record_part_usage' %}", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/x-www-form-urlencoded",
+				"X-Requested-With": "XMLHttpRequest",
+				"X-CSRFToken": csrfToken,
+			},
+			body: payload.toString(),
+		});
+		const data = await response.json().catch(() => ({ ok: false, message: "Failed to save usage." }));
+		if (!response.ok || !data.ok) {
+			window.alert(data.message || "Could not save usage.");
+			return;
+		}
+		window.alert(data.message);
+		closeUsageModal();
+		await refreshLiveData();
+	}
+
+	function bindMachineLinks() {
+		document.querySelectorAll(".js-machine-link").forEach((button) => {
+			button.addEventListener("click", () => {
+				openUsageModal(button.getAttribute("data-work-order-id"), button.getAttribute("data-machine-name") || "-");
+			});
+		});
 	}
 
 	async function refreshLiveData() {
@@ -368,7 +541,33 @@
 		});
 	}
 
+	if (usageReplacedSelect) {
+		usageReplacedSelect.addEventListener("change", () => {
+			usagePartFields.style.display = usageReplacedSelect.value === "yes" ? "block" : "none";
+		});
+	}
+
+	if (usageSaveBtn) {
+		usageSaveBtn.addEventListener("click", async () => {
+			await saveUsageIfNeeded();
+		});
+	}
+
+	if (usageCloseBtn) {
+		usageCloseBtn.addEventListener("click", closeUsageModal);
+	}
+
+	if (machineUsageModal) {
+		machineUsageModal.addEventListener("click", (event) => {
+			if (event.target === machineUsageModal) {
+				closeUsageModal();
+			}
+		});
+	}
+
 	bindActionForms();
+	bindMachineLinks();
+	setupWorkRequestsCollapse();
 	refreshLiveData();
 	setInterval(refreshLiveData, 3000);
 })();

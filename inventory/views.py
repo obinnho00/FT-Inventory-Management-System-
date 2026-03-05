@@ -1374,18 +1374,24 @@ def _format_nc_time(value):
     return timezone.localtime(value, NC_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p ET")
 
 
-def _resolve_station_machine_name(station):
+def _resolve_station_machine(station):
     if not station:
-        return "-"
-    linked_machine = Machine.objects.filter(station=station).order_by("name").first()
+        return None
+    return Machine.objects.filter(station=station).order_by("name").first()
+
+
+def _resolve_station_machine_name(station):
+    linked_machine = _resolve_station_machine(station)
     return linked_machine.name if linked_machine else "-"
 
 
 def _serialize_work_order(item):
     technician_name = f"{(item.technician_first_name or '').strip()} {(item.technician_last_name or '').strip()}".strip()
-    machine_name = item.machine.name if item.machine else _resolve_station_machine_name(item.station)
+    resolved_machine = item.machine if item.machine else _resolve_station_machine(item.station)
+    machine_name = resolved_machine.name if resolved_machine else "-"
     return {
         "id": item.id,
+        "department_id": item.department_id,
         "priority": item.priority,
         "priority_label": item.get_priority_display(),
         "status": item.status,
@@ -1394,6 +1400,7 @@ def _serialize_work_order(item):
         "location_name": item.department.building.name,
         "station_name": item.station.name,
         "station_id": item.station_id,
+        "machine_id": resolved_machine.id if resolved_machine else "",
         "machine_name": machine_name,
         "message": item.message or "-",
         "technician_name": technician_name or "Engineering Team",
@@ -1602,6 +1609,125 @@ def work_station_live_status(request):
             "now": timezone.localtime(timezone.now(), NC_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p ET"),
             "alerts": [_serialize_work_order(item) for item in active_alerts],
             "work_orders": [_serialize_work_order(item) for item in work_orders],
+        }
+    )
+
+
+@require_any_login
+def work_station_machine_parts(request):
+    if not request.session.get("inventory_user"):
+        return JsonResponse({"ok": False, "message": "Only authorized department users can access machine parts."}, status=403)
+
+    work_order_id = request.GET.get("work_order_id", "").strip()
+    if not work_order_id:
+        return JsonResponse({"ok": False, "message": "Work order ID is required."}, status=400)
+
+    work_order = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(id=work_order_id).first()
+    if not work_order:
+        return JsonResponse({"ok": False, "message": "Work order not found."}, status=404)
+
+    allowed_department_ids = _get_allowed_department_ids(request)
+    if work_order.department_id not in allowed_department_ids:
+        return JsonResponse({"ok": False, "message": "You are not allowed to access this department."}, status=403)
+
+    target_machine = work_order.machine or _resolve_station_machine(work_order.station)
+    if not target_machine:
+        return JsonResponse({"ok": False, "message": "No machine is linked to this station/request.", "parts": []}, status=200)
+
+    machine_parts = MachinePart.objects.select_related("part", "machine", "machine__department").filter(machine=target_machine).order_by("part__name")
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "machine": {
+                "id": target_machine.id,
+                "name": target_machine.name,
+                "department_id": target_machine.department_id,
+                "department_name": target_machine.department.name,
+            },
+            "parts": [
+                {
+                    "machine_part_id": row.id,
+                    "part_name": row.part.name,
+                    "model_number": row.part.model_number,
+                    "quantity_left": row.quantity_left,
+                }
+                for row in machine_parts
+            ],
+        }
+    )
+
+
+@require_any_login
+def work_station_record_part_usage(request):
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "message": "POST required."}, status=405)
+
+    if not request.session.get("inventory_user"):
+        return JsonResponse({"ok": False, "message": "Only authorized department users can use inventory."}, status=403)
+
+    work_order_id = request.POST.get("work_order_id", "").strip()
+    machine_part_id = request.POST.get("machine_part_id", "").strip()
+    used_quantity = request.POST.get("used_quantity", "").strip()
+
+    if not work_order_id or not machine_part_id or not used_quantity:
+        return JsonResponse({"ok": False, "message": "Work order, part, and used quantity are required."}, status=400)
+
+    try:
+        used_value = int(used_quantity)
+        if used_value <= 0:
+            raise ValueError()
+    except ValueError:
+        return JsonResponse({"ok": False, "message": "Used quantity must be greater than 0."}, status=400)
+
+    work_order = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(id=work_order_id).first()
+    if not work_order:
+        return JsonResponse({"ok": False, "message": "Work order not found."}, status=404)
+
+    allowed_department_ids = _get_allowed_department_ids(request)
+    if work_order.department_id not in allowed_department_ids:
+        return JsonResponse({"ok": False, "message": "You are not allowed to use inventory for this department."}, status=403)
+
+    target_machine = work_order.machine or _resolve_station_machine(work_order.station)
+    if not target_machine:
+        return JsonResponse({"ok": False, "message": "No machine is linked to this station/request."}, status=400)
+
+    machine_part = MachinePart.objects.select_related("machine", "part").filter(id=machine_part_id).first()
+    if not machine_part:
+        return JsonResponse({"ok": False, "message": "Selected machine part was not found."}, status=404)
+
+    if machine_part.machine_id != target_machine.id:
+        return JsonResponse({"ok": False, "message": "Selected part does not belong to this machine."}, status=400)
+
+    if machine_part.machine.department_id != work_order.department_id:
+        return JsonResponse({"ok": False, "message": "Department mismatch for selected part."}, status=400)
+
+    if used_value > machine_part.quantity_left:
+        return JsonResponse(
+            {
+                "ok": False,
+                "message": f"Cannot use {used_value}. Available quantity is {machine_part.quantity_left}.",
+            },
+            status=400,
+        )
+
+    machine_part.quantity_left -= used_value
+    _set_machine_part_last_action(machine_part, request, "USED", used_value)
+    machine_part.save(
+        update_fields=[
+            "quantity_left",
+            "last_action_by_first_name",
+            "last_action_by_last_name",
+            "last_action_type",
+            "last_used_quantity",
+            "last_action_at",
+        ]
+    )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "message": f"Used {used_value} from {machine_part.part.name} on {machine_part.machine.name}. Remaining: {machine_part.quantity_left}.",
         }
     )
 

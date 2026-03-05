@@ -37,6 +37,8 @@ urlpatterns = [
     path('inventory/work-station/accept/', views.work_station_accept_request, name='work_station_accept'),
     path('inventory/work-station/complete/', views.work_station_complete_request, name='work_station_complete'),
     path('inventory/work-station/cancel/', views.work_station_cancel_request, name='work_station_cancel'),
+    path('inventory/work-station/machine-parts/', views.work_station_machine_parts, name='work_station_machine_parts'),
+    path('inventory/work-station/record-part-usage/', views.work_station_record_part_usage, name='work_station_record_part_usage'),
 
     path("inventory/search/", views.inventory_search, name="inventory_search"),
 

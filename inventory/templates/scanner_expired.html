@@ -1,22 +1,29 @@
-{% extends "base.html" %}
-
-{% block title %}Scan Again | ABB Inventory System{% endblock %}
-
-{% block extra_css %}
-<style>
-    body { background: #0f172a; }
-    .wrap { max-width: 640px; margin: 28px auto; padding: 0 14px 24px; color: #e2e8f0; }
-    .card { background: rgba(30,41,59,0.95); border: 1px solid rgba(255,255,255,0.16); border-radius: 14px; padding: 24px; text-align: center; }
-    .card h1 { margin: 0 0 10px; color: #fff; font-size: 28px; }
-    .card p { margin: 0; color: #cbd5e1; font-size: 15px; }
-</style>
-{% endblock %}
-
-{% block content %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scan Again | ABB Inventory System</title>
+    <style>
+        body { background: #0f172a; margin: 0; font-family: Arial, sans-serif; }
+        .wrap { max-width: 640px; margin: 28px auto; padding: 0 14px 24px; color: #e2e8f0; }
+        .logo-wrap { text-align: center; margin: 8px 0 12px; }
+        .logo-image { width: 110px; max-width: 100%; height: auto; }
+        .card { background: rgba(30,41,59,0.95); border: 1px solid rgba(255,255,255,0.16); border-radius: 14px; padding: 24px; text-align: center; }
+        .card h1 { margin: 0 0 10px; color: #fff; font-size: 28px; }
+        .card p { margin: 0; color: #cbd5e1; font-size: 15px; }
+    </style>
+</head>
+<body>
 <div class="wrap">
+    <div class="logo-wrap">
+        <img src="{% static 'image/Abblogo.png' %}" alt="ABB Logo" class="logo-image">
+    </div>
     <section class="card">
         <h1>Work Completed</h1>
         <p>This scanner session is closed. Please scan the station QR code again for a new request.</p>
     </section>
 </div>
-{% endblock %}
+</body>
+</html>
