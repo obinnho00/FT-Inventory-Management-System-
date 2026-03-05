@@ -197,6 +197,30 @@ def upload_part_image_popup(request):
         messages.error(request, "Request method is not supported for this action.")
         return redirect("inventory")
 
+    user = _get_inventory_session_user(request)
+    if not user:
+        messages.error(request, "Please login first to upload part images.")
+        return redirect("inventory_login")
+
+    user_department_ids = user.get("department_ids") or []
+    if not user_department_ids and user.get("department_id"):
+        user_department_ids = [user.get("department_id")]
+
+    department_id = request.POST.get("department_id", "").strip()
+    if not department_id:
+        messages.error(request, "Please select a department first before uploading an image.")
+        return redirect("inventory")
+
+    try:
+        department_id_int = int(department_id)
+    except ValueError:
+        messages.error(request, "Invalid department selection.")
+        return redirect("inventory")
+
+    if department_id_int not in user_department_ids:
+        messages.error(request, "You are not allowed to upload images for this department.")
+        return redirect("inventory")
+
     model_number = request.POST.get("model_number", "").strip()
     selected_model = request.POST.get("part_model", "").strip()
     image_file = request.FILES.get("part_image")
@@ -215,7 +239,15 @@ def upload_part_image_popup(request):
         part = Part.objects.get(model_number=target_model)
     except Part.DoesNotExist:
         messages.error(request, "Selected part was not found.")
-        return redirect("inventory")
+        return redirect(f"{reverse('inventory')}?department={department_id_int}")
+
+    part_belongs_to_department = MachinePart.objects.filter(
+        part=part,
+        machine__department_id=department_id_int,
+    ).exists()
+    if not part_belongs_to_department:
+        messages.error(request, "You can only upload images for parts used in your selected department.")
+        return redirect(f"{reverse('inventory')}?department={department_id_int}")
 
     replacing_existing = bool(part.image)
     part.image = image_file
@@ -226,7 +258,7 @@ def upload_part_image_popup(request):
     else:
         messages.success(request, f"Image added for {part.name} ({part.model_number}).")
 
-    return redirect("inventory")
+    return redirect(f"{reverse('inventory')}?department={department_id_int}")
 
 
 
@@ -239,6 +271,19 @@ def upload_part_image_popup(request):
 def inventory_view(request):
 
     selected_department = request.GET.get("department")
+
+    inventory_user = _get_inventory_session_user(request)
+    user_department_ids = (inventory_user or {}).get("department_ids") or []
+    if not user_department_ids and (inventory_user or {}).get("department_id"):
+        user_department_ids = [(inventory_user or {}).get("department_id")]
+
+    can_upload_part_image = False
+    upload_department_id = ""
+    if selected_department and selected_department.isdigit():
+        selected_department_id = int(selected_department)
+        if selected_department_id in user_department_ids:
+            can_upload_part_image = True
+            upload_department_id = str(selected_department_id)
 
     departments = Department.objects.select_related("building").all()
 
@@ -415,6 +460,8 @@ def inventory_view(request):
         "table_columns": table_columns,
         "data_rows": data_rows,
         "row_details": row_details,
+        "can_upload_part_image": can_upload_part_image,
+        "upload_department_id": upload_department_id,
     }
 
     return _render_template(request, "dashboard.html", context)
@@ -513,7 +560,9 @@ def inventory_search(request):
         "row_details": row_details,
         "departments": Department.objects.all(),
         "selected_department": None,
-        "search_query": query
+        "search_query": query,
+        "can_upload_part_image": False,
+        "upload_department_id": "",
     }
 
     return _render_template(request, "dashboard.html", context)

@@ -549,13 +549,14 @@
             <div id="modalVendors"></div>
         </div>
 
+        {% if can_upload_part_image %}
         <div class="image-edit-card">
             <h4 class="image-edit-title">Add / Replace Image for Existing Part</h4>
 
-            <form id="popupImageForm" method="post" enctype="multipart/form-data">
+            <form id="popupImageForm" method="post" enctype="multipart/form-data" action="{% url 'upload_part_image_popup' %}">
                 {% csrf_token %}
-                <input type="hidden" name="action" value="upload_part_image_popup">
                 <input type="hidden" name="model_number" id="popupModelNumberField">
+                <input type="hidden" name="department_id" value="{{ upload_department_id }}">
 
                 <div class="image-edit-grid">
                     <div class="image-edit-field">
@@ -576,6 +577,7 @@
                 </div>
             </form>
         </div>
+        {% endif %}
     </div>
 </div>
 
@@ -758,16 +760,6 @@ $(document).ready(function() {
 
     $(document).on('change', '#popupPartSelect', function() {
         updatePopupImageStatus();
-    });
-
-    $(document).on('submit', '#popupImageForm', function(event) {
-        event.preventDefault();
-        const status = document.getElementById("popupImageStatus");
-        if (!status) {
-            return;
-        }
-        status.className = "image-edit-status image-status-new";
-        status.textContent = "Frontend ready. Connect this form to your backend upload endpoint.";
     });
 
     if ($.fn.DataTable.isDataTable('#inventoryTable')) {
