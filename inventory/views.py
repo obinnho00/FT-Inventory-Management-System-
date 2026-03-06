@@ -165,8 +165,9 @@ def _send_authorized_user_verification_email(authorized_user, request=None, repo
 
 
 def _is_reachable_email_domain(email):
-    # Best-effort domain verification to reject clearly fake domains.
-    # Final proof of ownership is still email link confirmation.
+    # Best-effort DNS check only.
+    # Do not hard-block on DNS failures because valid corporate domains may fail
+    # local resolution while still receiving mail via MX records.
     if "@" not in email:
         return False
 
@@ -177,7 +178,7 @@ def _is_reachable_email_domain(email):
     try:
         socket.getaddrinfo(domain, None)
     except Exception:
-        return False
+        return True
     return True
 
 
@@ -1456,10 +1457,6 @@ def admin_manager_accounts_view(request):
                 validate_email(email)
             except ValidationError:
                 messages.error(request, "Please provide a valid manager email address.")
-                return redirect("manager_admin")
-
-            if not _is_reachable_email_domain(email):
-                messages.error(request, "Manager email domain could not be validated. Please use a real reachable email domain.")
                 return redirect("manager_admin")
 
             if len(access_code) < 6:
