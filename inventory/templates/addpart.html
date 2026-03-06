@@ -264,6 +264,26 @@
 						<label for="new_description">New Part Description (optional)</label>
 						<textarea id="new_description" name="new_description"></textarea>
 					</div>
+					<div class="field">
+						<label for="new_vendor_name">Vendor Name</label>
+						<input id="new_vendor_name" name="new_vendor_name" type="text" placeholder="Example: ABB Supplier Inc.">
+					</div>
+					<div class="field">
+						<label for="new_vendor_phone">Vendor Phone (optional)</label>
+						<input id="new_vendor_phone" name="new_vendor_phone" type="text" placeholder="Example: +1 555 555 5555">
+					</div>
+					<div class="field">
+						<label for="new_vendor_website">Vendor Website URL</label>
+						<input id="new_vendor_website" name="new_vendor_website" type="text" placeholder="Example: supplier.com">
+					</div>
+					<div class="field">
+						<label for="new_manufacturer_name">Manufacturer Name (optional)</label>
+						<input id="new_manufacturer_name" name="new_manufacturer_name" type="text" placeholder="Example: ABB Manufacturing">
+					</div>
+					<div class="field">
+						<label for="new_manufacturer_phone">Manufacturer Phone (optional)</label>
+						<input id="new_manufacturer_phone" name="new_manufacturer_phone" type="text" placeholder="Example: +1 555 111 2233">
+					</div>
 				</div>
 
 				<div class="field">
@@ -464,8 +484,10 @@
 		const existingPartSelect = document.getElementById("part_id");
 		const newPartName = document.getElementById("new_part_name");
 		const newModelNumber = document.getElementById("new_model_number");
+		const newVendorName = document.getElementById("new_vendor_name");
+		const newVendorWebsite = document.getElementById("new_vendor_website");
 
-		if (!existingPartFields || !newPartFields || !existingPartSelect || !newPartName || !newModelNumber) {
+		if (!existingPartFields || !newPartFields || !existingPartSelect || !newPartName || !newModelNumber || !newVendorName || !newVendorWebsite) {
 			return;
 		}
 
@@ -475,12 +497,16 @@
 			existingPartSelect.required = false;
 			newPartName.required = true;
 			newModelNumber.required = true;
+			newVendorName.required = true;
+			newVendorWebsite.required = true;
 		} else {
 			existingPartFields.classList.remove("hidden");
 			newPartFields.classList.add("hidden");
 			existingPartSelect.required = true;
 			newPartName.required = false;
 			newModelNumber.required = false;
+			newVendorName.required = false;
+			newVendorWebsite.required = false;
 		}
 	}
 

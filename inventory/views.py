@@ -21,7 +21,7 @@ import socket
 from PIL import Image
 import qrcode
 from zoneinfo import ZoneInfo
-from .models import Building, Department, UserRequirement, Machine, MachinePart, VendorPart, Part, DepartmentAuthorizedUser, ManagerAccount, AdminSetupKey, Station, WorkOrderRequest, InventoryReminder
+from .models import Building, Department, UserRequirement, Machine, MachinePart, Vendor, Manufacturer, VendorPart, Part, DepartmentAuthorizedUser, ManagerAccount, AdminSetupKey, Station, WorkOrderRequest, InventoryReminder
 from functools import wraps
 
 
@@ -232,6 +232,23 @@ def _process_inventory_reminders_for_machine_part(machine_part):
 
     inventory_manage_url = f"{app_base_url}{reverse('inventory_manage')}"
     reminder_settings_url = f"{app_base_url}{reverse('set_reminder')}"
+    vendor_rows = []
+
+    for vendor_part in machine_part.part.vendorpart_set.select_related("vendor", "manufacturer").all():
+        vendor_name = vendor_part.vendor.name if vendor_part.vendor else "-"
+        vendor_phone = vendor_part.vendor.phone if vendor_part.vendor and vendor_part.vendor.phone else "-"
+        vendor_website = vendor_part.vendor.website if vendor_part.vendor and vendor_part.vendor.website else ""
+        vendor_website_url = ""
+        if vendor_website:
+            vendor_website_url = vendor_website if vendor_website.startswith(("http://", "https://")) else f"https://{vendor_website}"
+
+        vendor_rows.append({
+            "vendor_name": vendor_name,
+            "manufacturer_name": vendor_part.manufacturer.name if vendor_part.manufacturer else "-",
+            "vendor_phone": vendor_phone,
+            "vendor_website": vendor_website or "-",
+            "vendor_website_url": vendor_website_url,
+        })
 
     for reminder in active_reminders:
         threshold_reached = current_quantity <= reminder.alert_quantity
@@ -246,6 +263,7 @@ def _process_inventory_reminders_for_machine_part(machine_part):
                 "current_quantity": current_quantity,
                 "alert_quantity": reminder.alert_quantity,
                 "placement_location": machine_part.placement_location or "-",
+                "vendor_rows": vendor_rows,
                 "inventory_manage_url": inventory_manage_url,
                 "reminder_settings_url": reminder_settings_url,
                 "notify_email": reminder.notify_email,
@@ -274,6 +292,27 @@ def _process_inventory_reminders_for_machine_part(machine_part):
         elif not threshold_reached and reminder.alert_sent:
             reminder.alert_sent = False
             reminder.save(update_fields=["alert_sent"])
+
+
+def _process_pending_inventory_reminders(department_ids=None, notify_email=None):
+    reminders = InventoryReminder.objects.select_related(
+        "machine_part",
+        "machine_part__machine",
+        "machine_part__machine__department",
+        "machine_part__part",
+    ).filter(is_active=True)
+
+    if department_ids:
+        reminders = reminders.filter(department_id__in=department_ids)
+
+    if notify_email:
+        reminders = reminders.filter(notify_email=notify_email)
+
+    machine_part_ids = reminders.values_list("machine_part_id", flat=True).distinct()
+    machine_parts = MachinePart.objects.select_related("machine", "part", "machine__department").filter(id__in=machine_part_ids)
+
+    for machine_part in machine_parts:
+        _process_inventory_reminders_for_machine_part(machine_part)
 
 
 class DepartmentReminderView(View):
@@ -351,6 +390,11 @@ class DepartmentReminderView(View):
         if not user:
             messages.error(request, "Please login first.")
             return redirect("inventory_login")
+
+        _process_pending_inventory_reminders(
+            department_ids=self._get_authorized_department_ids(user),
+            notify_email=(user.get("email") or "").strip(),
+        )
 
         context = self._build_context(
             request,
@@ -1060,6 +1104,11 @@ def inventory_manage_view(request):
         messages.error(request, "No authorized departments found for this login.")
         return redirect("inventory_login")
 
+    _process_pending_inventory_reminders(
+        department_ids=user_department_ids,
+        notify_email=(user.get("email") or "").strip(),
+    )
+
     if request.method == "POST":
         action = request.POST.get("action", "").strip()
 
@@ -1071,6 +1120,11 @@ def inventory_manage_view(request):
             new_part_name = request.POST.get("new_part_name", "").strip()
             new_model_number = request.POST.get("new_model_number", "").strip()
             new_description = request.POST.get("new_description", "").strip()
+            new_vendor_name = request.POST.get("new_vendor_name", "").strip()
+            new_vendor_phone = request.POST.get("new_vendor_phone", "").strip()
+            new_vendor_website = request.POST.get("new_vendor_website", "").strip()
+            new_manufacturer_name = request.POST.get("new_manufacturer_name", "").strip()
+            new_manufacturer_phone = request.POST.get("new_manufacturer_phone", "").strip()
             add_quantity = request.POST.get("add_quantity", "").strip()
             placement_location = request.POST.get("placement_location", "").strip()
             usage_notes = request.POST.get("usage_notes", "").strip()
@@ -1107,6 +1161,10 @@ def inventory_manage_view(request):
                     messages.error(request, "New part name and model number are required.")
                     return redirect("inventory_manage")
 
+                if not new_vendor_name or not new_vendor_website:
+                    messages.error(request, "Vendor name and vendor website URL are required when adding a new part.")
+                    return redirect("inventory_manage")
+
                 part, created_part = Part.objects.get_or_create(
                     model_number=new_model_number,
                     defaults={
@@ -1123,6 +1181,57 @@ def inventory_manage_view(request):
                         part.description = new_description
                     part.save(update_fields=["name", "description"])
                     messages.success(request, f"Part model {part.model_number} already existed and was updated.")
+
+                if created_part:
+                    vendor = Vendor.objects.filter(name__iexact=new_vendor_name).first()
+                    if not vendor:
+                        vendor = Vendor.objects.create(
+                            name=new_vendor_name,
+                            phone=new_vendor_phone,
+                            website=new_vendor_website,
+                        )
+                    else:
+                        update_vendor_fields = []
+                        if new_vendor_phone and not vendor.phone:
+                            vendor.phone = new_vendor_phone
+                            update_vendor_fields.append("phone")
+                        if new_vendor_website and vendor.website != new_vendor_website:
+                            vendor.website = new_vendor_website
+                            update_vendor_fields.append("website")
+                        if update_vendor_fields:
+                            vendor.save(update_fields=update_vendor_fields)
+
+                    manufacturer = None
+                    if new_manufacturer_name:
+                        manufacturer = Manufacturer.objects.filter(name__iexact=new_manufacturer_name).first()
+                        if not manufacturer:
+                            manufacturer = Manufacturer.objects.create(
+                                name=new_manufacturer_name,
+                                phone=new_manufacturer_phone,
+                            )
+                        elif new_manufacturer_phone and not manufacturer.phone:
+                            manufacturer.phone = new_manufacturer_phone
+                            manufacturer.save(update_fields=["phone"])
+
+                    vendor_part, vendor_part_created = VendorPart.objects.get_or_create(
+                        part=part,
+                        vendor=vendor,
+                        defaults={"manufacturer": manufacturer},
+                    )
+                    if not vendor_part_created and manufacturer and vendor_part.manufacturer_id != manufacturer.id:
+                        vendor_part.manufacturer = manufacturer
+                        vendor_part.save(update_fields=["manufacturer"])
+                elif not created_part and (
+                    new_vendor_name
+                    or new_vendor_phone
+                    or new_vendor_website
+                    or new_manufacturer_name
+                    or new_manufacturer_phone
+                ):
+                    messages.info(
+                        request,
+                        "Vendor details were not changed because this part model already exists.",
+                    )
             else:
                 if not part_id:
                     messages.error(request, "Please select an existing part.")

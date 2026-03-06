@@ -47,6 +47,32 @@
                                 </tr>
                             </table>
 
+                            {% if vendor_rows %}
+                            <p style="margin:16px 0 10px;font-size:14px;line-height:1.6;font-weight:700;">Vendor / Supplier Information</p>
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e2e8f0;">
+                                <tr style="background:#f8fafc;">
+                                    <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-weight:700;">Vendor</td>
+                                    <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-weight:700;">Manufacturer</td>
+                                    <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-weight:700;">Phone</td>
+                                    <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-weight:700;">Website</td>
+                                </tr>
+                                {% for vendor in vendor_rows %}
+                                <tr>
+                                    <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">{{ vendor.vendor_name }}</td>
+                                    <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">{{ vendor.manufacturer_name }}</td>
+                                    <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">{{ vendor.vendor_phone }}</td>
+                                    <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">
+                                        {% if vendor.vendor_website_url %}
+                                            <a href="{{ vendor.vendor_website_url }}" style="color:#2563eb;">{{ vendor.vendor_website }}</a>
+                                        {% else %}
+                                            {{ vendor.vendor_website }}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+                            {% endif %}
+
                             <p style="margin:16px 0 10px;font-size:14px;line-height:1.6;">
                                 Please review this item and place an order if needed.
                             </p>
@@ -63,7 +89,7 @@
                                 Reminder recipient: {{ notify_email }}
                             </p>
                             <p style="margin:0;font-size:12px;color:#475569;">
-                                Manage reminders here: <a href="{{ reminder_settings_url }}" style="color:#2563eb;">{{ reminder_settings_url }}</a>
+                                This alert is sent once per threshold event and will resend only after stock goes above threshold and drops again.
                             </p>
                         </td>
                     </tr>
