@@ -213,8 +213,30 @@ else:
     }
 
 
-# Base URL used to build links inside reminder emails.
-APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://127.0.0.1:8000")
+# Base URL used to build links inside emails.
+# Priority:
+# 1) APP_BASE_URL explicit env
+# 2) Common platform host envs
+# 3) First non-local ALLOWED_HOSTS entry
+# 4) Localhost fallback for development only
+_app_base_url = (os.environ.get("APP_BASE_URL", "") or "").strip().strip('"').strip("'").rstrip("/")
+
+if not _app_base_url:
+    render_host = (os.environ.get("RENDER_EXTERNAL_HOSTNAME", "") or "").strip().strip('"').strip("'")
+    railway_host = (os.environ.get("RAILWAY_PUBLIC_DOMAIN", "") or "").strip().strip('"').strip("'")
+    if render_host:
+        _app_base_url = f"https://{render_host}"
+    elif railway_host:
+        _app_base_url = f"https://{railway_host}"
+
+if not _app_base_url:
+    for host in ALLOWED_HOSTS:
+        cleaned = host.strip().split(":")[0].lower()
+        if cleaned and cleaned not in {"localhost", "127.0.0.1", "*"}:
+            _app_base_url = f"{'http' if DEBUG else 'https'}://{cleaned}"
+            break
+
+APP_BASE_URL = _app_base_url or "http://127.0.0.1:8000"
 
 # Email delivery settings (set these in .env/.env.prod for real inbox delivery).
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")

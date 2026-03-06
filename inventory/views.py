@@ -18,6 +18,7 @@ import re
 from datetime import timedelta
 from secrets import token_urlsafe
 import socket
+from urllib.parse import urlparse
 from PIL import Image
 import qrcode
 from zoneinfo import ZoneInfo
@@ -133,14 +134,66 @@ def _set_machine_part_last_action(machine_part, request, action_type, action_qua
     machine_part.last_action_at = timezone.now()
 
 
+def _get_public_app_base_url(request=None):
+    local_hosts = {"localhost", "127.0.0.1"}
+
+    if request:
+        request_base_url = request.build_absolute_uri("/").rstrip("/")
+        request_host = (urlparse(request_base_url).hostname or "").lower()
+        if request_host and request_host not in local_hosts:
+            return request_base_url
+
+    configured_base_url = (getattr(settings, "APP_BASE_URL", "") or "").strip().strip('"').strip("'").rstrip("/")
+
+    if configured_base_url:
+        configured_host = (urlparse(configured_base_url).hostname or "").lower()
+        if configured_host and configured_host not in local_hosts:
+            return configured_base_url
+
+    for host in getattr(settings, "ALLOWED_HOSTS", []):
+        cleaned_host = str(host).strip().split(":")[0].lower()
+        if cleaned_host and cleaned_host not in local_hosts and cleaned_host != "*":
+            scheme = "http" if settings.DEBUG else "https"
+            return f"{scheme}://{cleaned_host}"
+
+    if configured_base_url:
+        return configured_base_url
+
+    if request:
+        return request.build_absolute_uri("/").rstrip("/")
+
+    return "http://127.0.0.1:8000"
+
+
+def _build_public_url(path_or_url, request=None):
+    if not path_or_url:
+        return ""
+
+    value = str(path_or_url).strip()
+    parsed = urlparse(value)
+
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        host = (parsed.hostname or "").lower()
+        if host not in {"localhost", "127.0.0.1"}:
+            return value
+        base = _get_public_app_base_url(request)
+        suffix = parsed.path or ""
+        if parsed.query:
+            suffix += f"?{parsed.query}"
+        if parsed.fragment:
+            suffix += f"#{parsed.fragment}"
+        return f"{base}{suffix}"
+
+    base = _get_public_app_base_url(request)
+    if value.startswith("/"):
+        return f"{base}{value}"
+    return f"{base}/{value.lstrip('/')}"
+
+
 def _send_authorized_user_verification_email(authorized_user, request=None, reporting_manager_name=""):
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@abb-inventory.local")
     verify_path = reverse('verify_authorized_user_email', kwargs={'token': authorized_user.email_verification_token})
-    if request:
-        verification_url = request.build_absolute_uri(verify_path)
-    else:
-        app_base_url = (getattr(settings, "APP_BASE_URL", "http://127.0.0.1:8000") or "").rstrip("/")
-        verification_url = f"{app_base_url}{verify_path}"
+    verification_url = _build_public_url(verify_path, request=request)
 
     context = {
         "first_name": authorized_user.first_name,
@@ -185,11 +238,7 @@ def _is_reachable_email_domain(email):
 def _send_manager_verification_email(manager, request=None):
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@abb-inventory.local")
     verify_path = reverse('verify_manager_email', kwargs={'token': manager.email_verification_token})
-    if request:
-        verification_url = request.build_absolute_uri(verify_path)
-    else:
-        app_base_url = (getattr(settings, "APP_BASE_URL", "http://127.0.0.1:8000") or "").rstrip("/")
-        verification_url = f"{app_base_url}{verify_path}"
+    verification_url = _build_public_url(verify_path, request=request)
 
     context = {
         "first_name": manager.first_name,
@@ -229,10 +278,8 @@ def _process_inventory_reminders_for_machine_part(machine_part):
 
     current_quantity = machine_part.quantity_left
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@abb-inventory.local")
-    app_base_url = (getattr(settings, "APP_BASE_URL", "http://127.0.0.1:8000") or "").rstrip("/")
-
-    inventory_manage_url = f"{app_base_url}{reverse('inventory_manage')}"
-    reminder_settings_url = f"{app_base_url}{reverse('set_reminder')}"
+    inventory_manage_url = _build_public_url(reverse('inventory_manage'))
+    reminder_settings_url = _build_public_url(reverse('set_reminder'))
     vendor_rows = []
 
     for vendor_part in machine_part.part.vendorpart_set.select_related("vendor", "manufacturer").all():
