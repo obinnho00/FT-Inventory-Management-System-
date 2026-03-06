@@ -133,7 +133,7 @@ def _set_machine_part_last_action(machine_part, request, action_type, action_qua
     machine_part.last_action_at = timezone.now()
 
 
-def _send_authorized_user_verification_email(authorized_user, request=None):
+def _send_authorized_user_verification_email(authorized_user, request=None, reporting_manager_name=""):
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@abb-inventory.local")
     verify_path = reverse('verify_authorized_user_email', kwargs={'token': authorized_user.email_verification_token})
     if request:
@@ -146,6 +146,7 @@ def _send_authorized_user_verification_email(authorized_user, request=None):
         "first_name": authorized_user.first_name,
         "last_name": authorized_user.last_name,
         "department_name": authorized_user.department.name,
+        "reporting_manager_name": reporting_manager_name or "Your Manager",
         "verification_url": verification_url,
     }
 
@@ -1772,7 +1773,11 @@ def grant_access_view(request):
 
                 if not granted_user.email_verified:
                     try:
-                        _send_authorized_user_verification_email(granted_user, request=request)
+                        _send_authorized_user_verification_email(
+                            granted_user,
+                            request=request,
+                            reporting_manager_name=f"{manager_account.first_name} {manager_account.last_name}".strip(),
+                        )
                     except Exception as exc:
                         verification_failed_departments.append(f"{department.name} ({exc})")
 
@@ -1881,7 +1886,11 @@ def grant_access_view(request):
             ])
 
             try:
-                _send_authorized_user_verification_email(authorized_user, request=request)
+                _send_authorized_user_verification_email(
+                    authorized_user,
+                    request=request,
+                    reporting_manager_name=f"{manager_account.first_name} {manager_account.last_name}".strip(),
+                )
             except Exception as exc:
                 messages.error(request, f"Failed to resend verification email to {authorized_user.email}: {exc}")
                 return redirect("manager_access")
