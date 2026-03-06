@@ -218,13 +218,26 @@ APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://127.0.0.1:8000")
 
 # Email delivery settings (set these in .env/.env.prod for real inbox delivery).
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
-EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com").strip().strip('"').strip("'")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
-EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "").strip().strip('"').strip("'")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "").strip().strip('"').strip("'")
 EMAIL_USE_TLS = _env_bool("EMAIL_USE_TLS", default=True)
 EMAIL_USE_SSL = _env_bool("EMAIL_USE_SSL", default=False)
-DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@abb-inventory.local")
+
+# Gmail App Passwords are often copied with spaces (e.g. "abcd efgh ijkl mnop").
+# Normalize that into the value SMTP expects.
+if EMAIL_HOST.lower() == "smtp.gmail.com":
+    EMAIL_HOST_PASSWORD = EMAIL_HOST_PASSWORD.replace(" ", "")
+
+raw_default_from_email = os.environ.get("DEFAULT_FROM_EMAIL", "").strip()
+
+# Guard against accidentally placing Python code text in env var values on host dashboards.
+# Example bad value: os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@...")
+if raw_default_from_email.startswith("os.environ.get("):
+    raw_default_from_email = ""
+
+DEFAULT_FROM_EMAIL = raw_default_from_email or EMAIL_HOST_USER or "noreply@abb-inventory.local"
 
 
 

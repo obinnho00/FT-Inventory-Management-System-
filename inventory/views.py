@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.core.files.base import ContentFile
-from django.core.mail import EmailMultiAlternatives
+from django.core.mail import send_mail
 from django.contrib import messages
 from django.db.models import Q
 from django.conf import settings
@@ -149,14 +149,14 @@ def _send_authorized_user_verification_email(authorized_user):
     html_body = render_to_string("emails/authorized_user_verification.html", context)
     text_body = strip_tags(html_body)
 
-    email = EmailMultiAlternatives(
+    return send_mail(
         subject,
         text_body,
         from_email,
         [authorized_user.email],
+        html_message=html_body,
+        fail_silently=False,
     )
-    email.attach_alternative(html_body, "text/html")
-    return email.send(fail_silently=False)
 
 
 def _is_reachable_email_domain(email):
@@ -191,14 +191,14 @@ def _send_manager_verification_email(manager):
     html_body = render_to_string("emails/manager_verification.html", context)
     text_body = strip_tags(html_body)
 
-    email = EmailMultiAlternatives(
+    return send_mail(
         subject,
         text_body,
         from_email,
         [manager.email],
+        html_message=html_body,
+        fail_silently=False,
     )
-    email.attach_alternative(html_body, "text/html")
-    return email.send(fail_silently=False)
 
 
 def _process_inventory_reminders_for_machine_part(machine_part):
@@ -246,14 +246,14 @@ def _process_inventory_reminders_for_machine_part(machine_part):
             text_body = strip_tags(html_body)
 
             try:
-                email = EmailMultiAlternatives(
+                sent_count = send_mail(
                     subject,
                     text_body,
                     from_email,
                     [reminder.notify_email],
+                    html_message=html_body,
+                    fail_silently=False,
                 )
-                email.attach_alternative(html_body, "text/html")
-                sent_count = email.send(fail_silently=False)
             except Exception:
                 sent_count = 0
 
@@ -1374,8 +1374,8 @@ def admin_manager_accounts_view(request):
 
             try:
                 _send_manager_verification_email(manager)
-            except Exception:
-                messages.warning(request, f"Manager account created for {manager.first_name} {manager.last_name}, but verification email failed to send.")
+            except Exception as exc:
+                messages.warning(request, f"Manager account created for {manager.first_name} {manager.last_name}, but verification email failed: {exc}")
                 return redirect("manager_admin")
 
             messages.success(request, f"Manager account created for {manager.first_name} {manager.last_name}. Verification email sent. Manager can login only after email confirmation.")
@@ -1409,8 +1409,8 @@ def admin_manager_accounts_view(request):
 
             try:
                 _send_manager_verification_email(manager)
-            except Exception:
-                messages.error(request, f"Failed to resend verification email to {manager.email}.")
+            except Exception as exc:
+                messages.error(request, f"Failed to resend verification email to {manager.email}: {exc}")
                 return redirect("manager_admin")
 
             messages.success(request, f"Verification email resent to manager {manager.email}.")
@@ -1765,8 +1765,8 @@ def grant_access_view(request):
                 if not granted_user.email_verified:
                     try:
                         _send_authorized_user_verification_email(granted_user)
-                    except Exception:
-                        verification_failed_departments.append(department.name)
+                    except Exception as exc:
+                        verification_failed_departments.append(f"{department.name} ({exc})")
 
                 updated_department_names.append(department.name)
 
@@ -1874,8 +1874,8 @@ def grant_access_view(request):
 
             try:
                 _send_authorized_user_verification_email(authorized_user)
-            except Exception:
-                messages.error(request, f"Failed to resend verification email to {authorized_user.email}.")
+            except Exception as exc:
+                messages.error(request, f"Failed to resend verification email to {authorized_user.email}: {exc}")
                 return redirect("manager_access")
 
             messages.success(request, f"Verification email resent to {authorized_user.email}.")

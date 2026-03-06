@@ -108,12 +108,11 @@
                         </div>
                     </div>
                 </li>
+                {% elif admin_unlocked or request.user.is_superuser %}
+                <li><a href="{% url 'manager_admin' %}">Admin Manager Setup</a></li>
+                <li><a href="{% url 'inventory_logout' %}">Logout</a></li>
                 {% else %}
                 <li><a href="{% url 'inventory_login' %}">Login</a></li>
-                {% endif %}
-
-                {% if request.user.is_superuser or admin_unlocked %}
-                <li><a href="{% url 'manage_department' %}">Department Setup</a></li>
                 {% endif %}
             </ul>
         </nav>
