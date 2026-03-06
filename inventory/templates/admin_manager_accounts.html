@@ -67,8 +67,6 @@
     .links a:hover { text-decoration: underline; }
     .action-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .action-row form { margin: 0; }
-    .login-image-wrap { text-align: center; margin: 10px 0 14px; }
-    .login-image { width: 110px; max-width: 100%; height: auto; }
     @media (max-width: 980px) { .panel-grid { grid-template-columns: 1fr; max-width: 100%; } }
 </style>
 {% endblock %}
@@ -85,10 +83,6 @@
         {% endfor %}
     </ul>
     {% endif %}
-
-    <div class="login-image-wrap">
-        <img src="{% static 'image/Abblogo.png' %}" alt="ABB Header" class="login-image">
-    </div>
 
     {% if not admin_unlocked %}
     <div class="panel-grid" style="max-width:760px; grid-template-columns:1fr;">
@@ -152,11 +146,6 @@
 
             <div class="action-row">
                 <button class="btn" type="submit" form="createManagerForm">Create Manager</button>
-                <form method="post" action="{% url 'manager_admin' %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="admin_logout">
-                    <button class="btn btn-danger" type="submit">Sign Out</button>
-                </form>
             </div>
         </section>
 

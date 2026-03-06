@@ -109,7 +109,7 @@
                     </div>
                 </li>
                 {% elif admin_unlocked or request.user.is_superuser %}
-                <li><a href="{% url 'manager_admin' %}">Admin Manager Setup</a></li>
+                <li><a href="{% url 'manager_admin' %}">Admin Config</a></li>
                 <li><a href="{% url 'inventory_logout' %}">Logout</a></li>
                 {% else %}
                 <li><a href="{% url 'inventory_login' %}">Login</a></li>

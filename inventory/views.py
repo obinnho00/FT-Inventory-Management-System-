@@ -133,10 +133,14 @@ def _set_machine_part_last_action(machine_part, request, action_type, action_qua
     machine_part.last_action_at = timezone.now()
 
 
-def _send_authorized_user_verification_email(authorized_user):
+def _send_authorized_user_verification_email(authorized_user, request=None):
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@abb-inventory.local")
-    app_base_url = (getattr(settings, "APP_BASE_URL", "http://127.0.0.1:8000") or "").rstrip("/")
-    verification_url = f"{app_base_url}{reverse('verify_authorized_user_email', kwargs={'token': authorized_user.email_verification_token})}"
+    verify_path = reverse('verify_authorized_user_email', kwargs={'token': authorized_user.email_verification_token})
+    if request:
+        verification_url = request.build_absolute_uri(verify_path)
+    else:
+        app_base_url = (getattr(settings, "APP_BASE_URL", "http://127.0.0.1:8000") or "").rstrip("/")
+        verification_url = f"{app_base_url}{verify_path}"
 
     context = {
         "first_name": authorized_user.first_name,
@@ -176,10 +180,14 @@ def _is_reachable_email_domain(email):
     return True
 
 
-def _send_manager_verification_email(manager):
+def _send_manager_verification_email(manager, request=None):
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@abb-inventory.local")
-    app_base_url = (getattr(settings, "APP_BASE_URL", "http://127.0.0.1:8000") or "").rstrip("/")
-    verification_url = f"{app_base_url}{reverse('verify_manager_email', kwargs={'token': manager.email_verification_token})}"
+    verify_path = reverse('verify_manager_email', kwargs={'token': manager.email_verification_token})
+    if request:
+        verification_url = request.build_absolute_uri(verify_path)
+    else:
+        app_base_url = (getattr(settings, "APP_BASE_URL", "http://127.0.0.1:8000") or "").rstrip("/")
+        verification_url = f"{app_base_url}{verify_path}"
 
     context = {
         "first_name": manager.first_name,
@@ -1373,7 +1381,7 @@ def admin_manager_accounts_view(request):
             manager.departments.set(departments)
 
             try:
-                _send_manager_verification_email(manager)
+                _send_manager_verification_email(manager, request=request)
             except Exception as exc:
                 messages.warning(request, f"Manager account created for {manager.first_name} {manager.last_name}, but verification email failed: {exc}")
                 return redirect("manager_admin")
@@ -1408,7 +1416,7 @@ def admin_manager_accounts_view(request):
             ])
 
             try:
-                _send_manager_verification_email(manager)
+                _send_manager_verification_email(manager, request=request)
             except Exception as exc:
                 messages.error(request, f"Failed to resend verification email to {manager.email}: {exc}")
                 return redirect("manager_admin")
@@ -1764,7 +1772,7 @@ def grant_access_view(request):
 
                 if not granted_user.email_verified:
                     try:
-                        _send_authorized_user_verification_email(granted_user)
+                        _send_authorized_user_verification_email(granted_user, request=request)
                     except Exception as exc:
                         verification_failed_departments.append(f"{department.name} ({exc})")
 
@@ -1873,7 +1881,7 @@ def grant_access_view(request):
             ])
 
             try:
-                _send_authorized_user_verification_email(authorized_user)
+                _send_authorized_user_verification_email(authorized_user, request=request)
             except Exception as exc:
                 messages.error(request, f"Failed to resend verification email to {authorized_user.email}: {exc}")
                 return redirect("manager_access")
