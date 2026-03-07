@@ -107,6 +107,11 @@
 			<form method="post" action="{% url 'work_station_scan_call' %}">
 				{% csrf_token %}
 				<input type="hidden" name="station_id" value="{{ selected_station.id }}">
+				<div class="field" style="margin: 0 0 10px; text-align: left;">
+					<label style="display:block; margin-bottom:6px;">Is the problem stopping the machine or station from running?</label>
+					<label style="margin-right:12px;"><input type="radio" name="problem_stopping_running" value="yes" required> Yes</label>
+					<label><input type="radio" name="problem_stopping_running" value="no" required> No</label>
+				</div>
 				<button class="big-btn btn-call" type="submit">Call Engineering</button>
 			</form>
 			<form method="post" action="{% url 'work_station_scan_cancel' %}">

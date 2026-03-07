@@ -13,6 +13,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.urls import reverse
 from django.views import View
+import json
 import io
 import re
 from datetime import timedelta
@@ -2275,365 +2276,6 @@ def _is_ajax_request(request):
     return request.headers.get("x-requested-with") == "XMLHttpRequest"
 
 
-def _duration_to_hours(value):
-    if not value:
-        return 0.0
-    return round(max(value.total_seconds(), 0) / 3600, 2)
-
-
-def _duration_to_text(value):
-    if not value:
-        return "0m"
-    total_seconds = int(max(value.total_seconds(), 0))
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    if hours and minutes:
-        return f"{hours}h {minutes}m"
-    if hours:
-        return f"{hours}h"
-    return f"{minutes}m"
-
-
-def _compute_machine_repair_metrics(machine, since_dt=None):
-    calls = WorkOrderRequest.objects.filter(machine=machine)
-    if since_dt:
-        calls = calls.filter(scanned_at__gte=since_dt)
-    calls = calls.order_by("scanned_at")
-
-    active_call = (
-        WorkOrderRequest.objects.filter(
-            machine=machine,
-            status__in={WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING},
-        )
-        .order_by("scanned_at")
-        .first()
-    )
-
-    now = timezone.now()
-    total_downtime = timedelta(0)
-
-    for call in calls:
-        start = call.scanned_at or now
-        if call.status in {WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING}:
-            end = now
-        elif call.completed_at:
-            end = call.completed_at
-        elif call.cancelled_at:
-            end = call.cancelled_at
-        elif call.responded_at:
-            end = call.responded_at
-        else:
-            end = now
-
-        if end and start and end > start:
-            total_downtime += (end - start)
-
-    first_call = calls.first()
-    observed_window = timedelta(0)
-    if first_call and first_call.scanned_at and now > first_call.scanned_at:
-        observed_window = now - first_call.scanned_at
-
-    total_uptime = observed_window - total_downtime
-    if total_uptime < timedelta(0):
-        total_uptime = timedelta(0)
-
-    current_downtime = timedelta(0)
-    if active_call and active_call.scanned_at and now > active_call.scanned_at:
-        current_downtime = now - active_call.scanned_at
-
-    is_machine_down = bool(active_call)
-    if is_machine_down:
-        trend_score = -1.0
-    else:
-        trend_score = 1.0 if machine.status == "Running" else 0.0
-
-    active_reason = ""
-    if active_call:
-        active_reason = (active_call.message or "").strip() or "Operator call in progress"
-
-    return {
-        "total_downtime": total_downtime,
-        "total_uptime": total_uptime,
-        "current_downtime": current_downtime,
-        "total_downtime_hours": _duration_to_hours(total_downtime),
-        "total_uptime_hours": _duration_to_hours(total_uptime),
-        "current_downtime_hours": _duration_to_hours(current_downtime),
-        "total_downtime_text": _duration_to_text(total_downtime),
-        "total_uptime_text": _duration_to_text(total_uptime),
-        "current_downtime_text": _duration_to_text(current_downtime),
-        "active_call": active_call,
-        "active_reason": active_reason,
-        "is_machine_down": is_machine_down,
-        "trend_score": trend_score,
-        "call_count": calls.count(),
-    }
-
-
-def _build_engineering_uptime_data(allowed_department_ids, selected_department_id="", selected_station_id="", selected_time_window="24h"):
-    window_options = {
-        "24h": timedelta(hours=24),
-        "7d": timedelta(days=7),
-        "30d": timedelta(days=30),
-        "all": None,
-    }
-    if selected_time_window not in window_options:
-        selected_time_window = "24h"
-    now = timezone.now()
-    window_delta = window_options[selected_time_window]
-    since_dt = (now - window_delta) if window_delta else None
-
-    departments = Department.objects.select_related("building").filter(id__in=allowed_department_ids).order_by("name")
-
-    if selected_department_id:
-        try:
-            selected_department_id_int = int(selected_department_id)
-        except ValueError:
-            selected_department_id_int = None
-        if selected_department_id_int not in allowed_department_ids:
-            selected_department_id = ""
-            selected_department_id_int = None
-    else:
-        selected_department_id_int = None
-
-    stations = Station.objects.select_related("department").filter(department_id__in=allowed_department_ids)
-    if selected_department_id_int:
-        stations = stations.filter(department_id=selected_department_id_int)
-
-    valid_station_ids = set(stations.values_list("id", flat=True))
-    if selected_station_id:
-        try:
-            selected_station_id_int = int(selected_station_id)
-        except ValueError:
-            selected_station_id = ""
-            selected_station_id_int = None
-
-        if selected_station_id_int not in valid_station_ids:
-            selected_station_id = ""
-            selected_station_id_int = None
-    else:
-        selected_station_id_int = None
-
-    machine_queryset = Machine.objects.select_related("department", "station").filter(department_id__in=allowed_department_ids)
-    if selected_department_id_int:
-        machine_queryset = machine_queryset.filter(department_id=selected_department_id_int)
-    if selected_station_id_int:
-        machine_queryset = machine_queryset.filter(station_id=selected_station_id_int)
-
-    machine_rows = []
-    total_uptime = timedelta(0)
-    total_downtime = timedelta(0)
-    for machine in machine_queryset.order_by("department__name", "name"):
-        metrics = _compute_machine_repair_metrics(machine, since_dt=since_dt)
-        observed_window = metrics["total_uptime"] + metrics["total_downtime"]
-        if observed_window.total_seconds() > 0:
-            uptime_percent = round((metrics["total_uptime"].total_seconds() / observed_window.total_seconds()) * 100, 1)
-        else:
-            uptime_percent = 0.0
-        downtime_percent = round(max(100 - uptime_percent, 0), 1)
-
-        total_uptime += metrics["total_uptime"]
-        total_downtime += metrics["total_downtime"]
-
-        health_direction = "flat"
-        if uptime_percent > downtime_percent:
-            health_direction = "up"
-        elif uptime_percent < downtime_percent:
-            health_direction = "down"
-
-        machine_rows.append({
-            "machine_id": machine.id,
-            "machine_name": machine.name,
-            "is_on": machine.status == "Running",
-            "status": machine.status,
-            "is_down": metrics["is_machine_down"],
-            "department_name": machine.department.name,
-            "station_name": machine.station.name if machine.station else "-",
-            "call_count": metrics["call_count"],
-            "total_uptime_text": metrics["total_uptime_text"],
-            "total_downtime_text": metrics["total_downtime_text"],
-            "current_downtime_text": metrics["current_downtime_text"],
-            "uptime_percent": uptime_percent,
-            "downtime_percent": downtime_percent,
-            "health_direction": health_direction,
-            "trend_score": metrics["trend_score"],
-            "active_reason": metrics["active_reason"],
-            "last_updated_text": _format_nc_time(machine.last_updated),
-        })
-
-    combined_total = total_uptime + total_downtime
-    if combined_total.total_seconds() > 0:
-        summary_uptime_percent = round((total_uptime.total_seconds() / combined_total.total_seconds()) * 100, 1)
-    else:
-        summary_uptime_percent = 0.0
-    summary_downtime_percent = round(max(100 - summary_uptime_percent, 0), 1)
-
-    calls_base = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(
-        department_id__in=allowed_department_ids
-    )
-    if selected_department_id_int:
-        calls_base = calls_base.filter(department_id=selected_department_id_int)
-    if selected_station_id_int:
-        calls_base = calls_base.filter(station_id=selected_station_id_int)
-    if since_dt:
-        calls_base = calls_base.filter(scanned_at__gte=since_dt)
-
-    call_counts = calls_base.aggregate(
-        new_count=Count("id", filter=Q(status=WorkOrderRequest.STATUS_NEW)),
-        coming_count=Count("id", filter=Q(status=WorkOrderRequest.STATUS_COMING)),
-        completed_count=Count("id", filter=Q(status=WorkOrderRequest.STATUS_COMPLETED)),
-        cancelled_count=Count("id", filter=Q(status=WorkOrderRequest.STATUS_CANCELLED)),
-        total_count=Count("id"),
-    )
-
-    call_rows = []
-    for call in calls_base.order_by("-scanned_at")[:150]:
-        resolved_machine = call.machine if call.machine else _resolve_station_machine(call.station)
-        call_rows.append({
-            "id": call.id,
-            "department_name": call.department.name,
-            "station_name": call.station.name,
-            "machine_name": resolved_machine.name if resolved_machine else "-",
-            "status": call.status,
-            "status_label": call.get_status_display(),
-            "priority_label": call.get_priority_display(),
-            "message": call.message or "-",
-            "scanned_at": _format_nc_time(call.scanned_at),
-            "accepted_at": _format_nc_time(call.accepted_at),
-            "completed_at": _format_nc_time(call.completed_at),
-        })
-
-    line_timestamp = timezone.localtime(now, NC_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
-
-    return {
-        "departments": departments,
-        "stations": stations.order_by("name"),
-        "selected_department_id": selected_department_id,
-        "selected_station_id": selected_station_id,
-        "selected_time_window": selected_time_window,
-        "machine_rows": machine_rows,
-        "machine_count": len(machine_rows),
-        "summary_uptime_text": _duration_to_text(total_uptime),
-        "summary_downtime_text": _duration_to_text(total_downtime),
-        "summary_uptime_percent": summary_uptime_percent,
-        "summary_downtime_percent": summary_downtime_percent,
-        "call_counts": call_counts,
-        "call_rows": call_rows,
-        "line_timestamp": line_timestamp,
-    }
-
-
-@require_any_login
-def engineering_machine_uptime_view(request):
-    inventory_user = _get_inventory_session_user(request)
-    if not inventory_user:
-        messages.error(request, "Engineering uptime is available only to authorized department users.")
-        return redirect("inventory_login")
-
-    allowed_department_ids = sorted(_get_inventory_user_department_ids(request))
-    if not allowed_department_ids:
-        messages.error(request, "No department access assigned. Ask your manager for access.")
-        return redirect("work_station")
-
-    selected_department_id = request.GET.get("department_id", "").strip()
-    selected_station_id = request.GET.get("station_id", "").strip()
-    selected_time_window = request.GET.get("time_window", "24h").strip().lower()
-
-    context = _build_engineering_uptime_data(
-        allowed_department_ids=allowed_department_ids,
-        selected_department_id=selected_department_id,
-        selected_station_id=selected_station_id,
-        selected_time_window=selected_time_window,
-    )
-    context["time_window_options"] = [
-        ("24h", "Last 24 Hours"),
-        ("7d", "Last 7 Days"),
-        ("30d", "Last 30 Days"),
-        ("all", "All Time"),
-    ]
-    return _render_template(request, "engineering_machine_uptime.html", context)
-
-
-@require_any_login
-def engineering_machine_uptime_live_data(request):
-    inventory_user = _get_inventory_session_user(request)
-    if not inventory_user:
-        return JsonResponse({"ok": False, "message": "Engineering uptime is available only to authorized department users."}, status=403)
-
-    allowed_department_ids = sorted(_get_inventory_user_department_ids(request))
-    if not allowed_department_ids:
-        return JsonResponse({"ok": False, "message": "No department access assigned."}, status=403)
-
-    selected_department_id = request.GET.get("department_id", "").strip()
-    selected_station_id = request.GET.get("station_id", "").strip()
-    selected_time_window = request.GET.get("time_window", "24h").strip().lower()
-
-    payload = _build_engineering_uptime_data(
-        allowed_department_ids=allowed_department_ids,
-        selected_department_id=selected_department_id,
-        selected_station_id=selected_station_id,
-        selected_time_window=selected_time_window,
-    )
-
-    return JsonResponse({
-        "ok": True,
-        "machine_count": payload["machine_count"],
-        "summary_uptime_text": payload["summary_uptime_text"],
-        "summary_downtime_text": payload["summary_downtime_text"],
-        "summary_uptime_percent": payload["summary_uptime_percent"],
-        "summary_downtime_percent": payload["summary_downtime_percent"],
-        "call_counts": payload["call_counts"],
-        "machine_rows": payload["machine_rows"],
-        "call_rows": payload["call_rows"],
-        "line_timestamp": payload["line_timestamp"],
-    })
-
-
-@require_any_login
-def engineering_machine_power_toggle(request):
-    if request.method != "POST":
-        return redirect("engineering_machine_uptime")
-
-    inventory_user = _get_inventory_session_user(request)
-    if not inventory_user:
-        messages.error(request, "Engineering uptime is available only to authorized department users.")
-        return redirect("inventory_login")
-
-    allowed_department_ids = _get_inventory_user_department_ids(request)
-    machine_id = request.POST.get("machine_id", "").strip()
-    power_action = request.POST.get("power_action", "").strip().lower()
-    selected_department_id = request.POST.get("selected_department_id", "").strip()
-    selected_station_id = request.POST.get("selected_station_id", "").strip()
-    selected_time_window = request.POST.get("selected_time_window", "").strip().lower()
-
-    if not machine_id or power_action not in {"on", "off"}:
-        messages.error(request, "Invalid machine power action.")
-        return redirect("engineering_machine_uptime")
-
-    machine = Machine.objects.filter(id=machine_id, department_id__in=allowed_department_ids).select_related("department").first()
-    if not machine:
-        messages.error(request, "Machine was not found or access is not allowed.")
-        return redirect("engineering_machine_uptime")
-
-    machine.status = "Running" if power_action == "on" else "Down"
-    machine.last_updated = timezone.now()
-    machine.save(update_fields=["status", "last_updated"])
-
-    state_text = "ON" if power_action == "on" else "OFF"
-    messages.success(request, f"Machine {machine.name} is now {state_text}.")
-
-    query_parts = []
-    if selected_department_id:
-        query_parts.append(f"department_id={selected_department_id}")
-    if selected_station_id:
-        query_parts.append(f"station_id={selected_station_id}")
-    if selected_time_window:
-        query_parts.append(f"time_window={selected_time_window}")
-
-    if query_parts:
-        return redirect(f"{reverse('engineering_machine_uptime')}?{'&'.join(query_parts)}")
-    return redirect("engineering_machine_uptime")
-
-
 def work_station_view(request):
     station_id = request.GET.get("station_id", "").strip()
     department_id = request.GET.get("department_id", "").strip()
@@ -3220,8 +2862,10 @@ def work_station_cancel_request(request):
         return redirect(f"{reverse('work_station')}?station_id={station_id}")
 
     station_name = work_order.station.name
-    work_order.delete()
-    messages.success(request, f"Call cancelled for station {station_name}. Unaccepted request removed.")
+    work_order.status = WorkOrderRequest.STATUS_CANCELLED
+    work_order.cancelled_at = timezone.now()
+    work_order.save(update_fields=["status", "cancelled_at"])
+    messages.success(request, f"Call cancelled for station {station_name}.")
     return redirect(f"{reverse('work_station')}?station_id={station_id}")
 
 
@@ -3231,9 +2875,16 @@ def work_station_scan_call(request):
 
     station_id = request.POST.get("station_id", "").strip()
     request_message = request.POST.get("message", "").strip()
+    problem_stopping_answer = request.POST.get("problem_stopping_running", "").strip().lower()
     if not station_id:
         messages.error(request, "Station is required.")
         return redirect("work_station")
+
+    if problem_stopping_answer not in {"yes", "no"}:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Please answer whether the problem is stopping the machine or station from running."}, status=400)
+        messages.error(request, "Please answer whether the problem is stopping the machine or station from running.")
+        return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1")
 
     station = Station.objects.select_related("department").filter(id=station_id).first()
     if not station:
@@ -3250,10 +2901,6 @@ def work_station_scan_call(request):
             if fallback_machine:
                 existing_active_request.machine = fallback_machine
                 existing_active_request.save(update_fields=["machine"])
-        if existing_active_request.machine and existing_active_request.machine.status != "Running":
-            existing_active_request.machine.status = "Running"
-            existing_active_request.machine.last_updated = timezone.now()
-            existing_active_request.machine.save(update_fields=["status", "last_updated"])
         if _is_ajax_request(request):
             return JsonResponse({"ok": False, "message": "Call already active for this station."}, status=400)
         messages.info(request, "Call already active for this station.")
@@ -3265,18 +2912,18 @@ def work_station_scan_call(request):
         .first()
     )
 
-    if linked_machine and linked_machine.status != "Running":
-        linked_machine.status = "Running"
-        linked_machine.last_updated = timezone.now()
-        linked_machine.save(update_fields=["status", "last_updated"])
+    is_blocking_issue = problem_stopping_answer == "yes"
+    priority = WorkOrderRequest.PRIORITY_HIGH if is_blocking_issue else WorkOrderRequest.PRIORITY_LOW
+    downtime_started_at = timezone.now() if is_blocking_issue else None
 
     WorkOrderRequest.objects.create(
         station=station,
         department=station.department,
         machine=linked_machine,
         message=request_message or "Station needs help.",
-        priority=WorkOrderRequest.PRIORITY_MEDIUM,
+        priority=priority,
         status=WorkOrderRequest.STATUS_NEW,
+        downtime_started_at=downtime_started_at,
     )
 
     if _is_ajax_request(request):
@@ -3310,12 +2957,14 @@ def work_station_scan_cancel(request):
         return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1")
 
     station_name = work_order.station.name
-    work_order.delete()
+    work_order.status = WorkOrderRequest.STATUS_CANCELLED
+    work_order.cancelled_at = timezone.now()
+    work_order.save(update_fields=["status", "cancelled_at"])
 
     if _is_ajax_request(request):
         return JsonResponse({"ok": True, "message": "Call cancelled.", "state": "CANCELLED"})
 
-    messages.success(request, f"Call cancelled for station {station_name}. Unaccepted request removed.")
+    messages.success(request, f"Call cancelled for station {station_name}.")
     return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1")
 
 
@@ -3473,11 +3122,14 @@ def work_station_scan_complete(request):
     if _is_ajax_request(request):
         return JsonResponse({"ok": True, "message": "Work completed recorded.", "state": "COMPLETED"})
 
-    return redirect("work_station_scanner_expired")
+    return redirect(f"{reverse('work_station_scanner_expired')}?state=completed")
 
 
 def work_station_scanner_expired(request):
-    return _render_template(request, "scanner_expired.html")
+    state = request.GET.get("state", "").strip().lower()
+    if state not in {"completed", "cancelled"}:
+        state = ""
+    return _render_template(request, "scanner_expired.html", {"scanner_state": state})
 
 
 
@@ -3907,3 +3559,26 @@ def verify_authorized_user_email(request, token):
 
     messages.success(request, "Email verified successfully. You can now login to inventory.")
     return redirect("inventory_login")
+
+
+
+# this section is for ploting the  graph for the machine perfokrmance and the part consumption over time
+# this function will collect the  data from the data base and store it a dictionary format to be used for plotting the graph in the front end
+
+import matplotlib.pyplot as plt
+def get_machine_Time_frame_from_maintenance_records(machine):
+    machine_time_data = WorkOrderRequest.objects.filter(machine=machine).values(
+        "scanned_at", "accessed_at", "responded_at", "accepted_at", "cancelled_at", "completed_at", "time_to_fix")
+    
+    time_frame_data = []
+    for record in machine_time_data:
+        time_frame_data.append({
+            "scanned_at": record["scanned_at"],
+            "accessed_at": record["accessed_at"],
+            "responded_at": record["responded_at"],
+            "accepted_at": record["accepted_at"],
+            "cancelled_at": record["cancelled_at"],
+            "completed_at": record["completed_at"],
+            "time_to_fix": record["time_to_fix"],
+        })
+    return time_frame_data

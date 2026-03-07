@@ -76,6 +76,11 @@
             <form method="post" action="{% url 'work_station_scan_call' %}" class="js-scanner-action" id="scannerCallForm">
                 {% csrf_token %}
                 <input type="hidden" name="station_id" value="{{ selected_station.id }}">
+                <div class="usage-field" style="grid-column: 1 / -1; margin-bottom: 10px; text-align:left;">
+                    <label style="margin-bottom:6px;">Is the problem stopping the machine or station from running?</label>
+                    <label style="display:inline-block; margin-right:12px;"><input type="radio" name="problem_stopping_running" value="yes"> Yes</label>
+                    <label style="display:inline-block;"><input type="radio" name="problem_stopping_running" value="no"> No</label>
+                </div>
                 <button class="btn btn-call" type="submit">Call Engineering</button>
             </form>
             <form method="post" action="{% url 'work_station_scan_cancel' %}" class="js-scanner-action">
@@ -176,8 +181,10 @@
     const scannerUsageSaveBtn = document.getElementById("scannerUsageSaveBtn");
     const scannerUsageMachine = document.getElementById("scannerUsageMachine");
     const completeForm = document.querySelector(".js-scanner-complete");
+    const scannerCallForm = document.getElementById("scannerCallForm");
     const initialStatus = "{% if just_completed %}COMPLETED{% elif station_latest_request and station_latest_request.status == 'NEW' %}NEW{% elif station_latest_request and station_latest_request.status == 'COMING' %}COMING{% else %}{% endif %}";
     let hadActiveRequestInSession = initialStatus === "NEW" || initialStatus === "COMING";
+    let terminalScannerState = "";
 
     function updateScreens(status) {
         if (!doneScreen || !comingScreen || !pendingScreen || !cancelledScreen) return;
@@ -188,6 +195,10 @@
 
         if (status === "NEW" || status === "COMING") {
             hadActiveRequestInSession = true;
+        }
+
+        if (status === "COMPLETED" || status === "CANCELLED") {
+            terminalScannerState = status;
         }
 
         if (status === "COMPLETED") {
@@ -292,7 +303,10 @@
                     messageEl.innerHTML = "<strong>Request:</strong> -";
                 }
                 if (hadActiveRequestInSession) {
-                    window.location.href = "{% url 'work_station_scanner_expired' %}";
+                    const expiredUrl = terminalScannerState === "CANCELLED"
+                        ? "{% url 'work_station_scanner_expired' %}?state=cancelled"
+                        : "{% url 'work_station_scanner_expired' %}?state=completed";
+                    window.location.href = expiredUrl;
                     return;
                 }
                 updateScreens("");
@@ -322,6 +336,13 @@
     document.querySelectorAll(".js-scanner-action").forEach((form) => {
         form.addEventListener("submit", async (event) => {
             event.preventDefault();
+            if (form === scannerCallForm) {
+                const selectedAnswer = form.querySelector('input[name="problem_stopping_running"]:checked');
+                if (!selectedAnswer) {
+                    window.alert("Please answer if the problem is stopping the machine or station from running.");
+                    return;
+                }
+            }
             if (form.classList.contains("js-scanner-complete")) {
                 if (scannerUsageModal) {
                     scannerUsedSelect.value = "";

@@ -39,6 +39,17 @@
                 </select>
             </div>
             <div>
+                <label for="machine_id">Machine</label>
+                <select id="machine_id" name="machine_id">
+                    <option value="">Select Machine</option>
+                    {% for machine in machine_options %}
+                        <option value="{{ machine.id }}" {% if selected_machine_id == machine.id|stringformat:"s" %}selected{% endif %}>
+                            {{ machine.name }}{% if machine.station %} ({{ machine.station.name }}){% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
                 <label for="time_window">Time Window</label>
                 <select id="time_window" name="time_window">
                     {% for value, label in time_window_options %}
@@ -147,6 +158,7 @@
                                 <input type="hidden" name="machine_id" value="{{ row.machine_id }}">
                                 <input type="hidden" name="selected_department_id" value="{{ selected_department_id }}">
                                 <input type="hidden" name="selected_station_id" value="{{ selected_station_id }}">
+                                <input type="hidden" name="selected_machine_id" value="{{ selected_machine_id }}">
                                 <input type="hidden" name="selected_time_window" value="{{ selected_time_window }}">
                                 <input type="hidden" name="power_action" value="off">
                                 <button type="submit" class="btn-off">Turn OFF</button>
@@ -157,6 +169,7 @@
                                 <input type="hidden" name="machine_id" value="{{ row.machine_id }}">
                                 <input type="hidden" name="selected_department_id" value="{{ selected_department_id }}">
                                 <input type="hidden" name="selected_station_id" value="{{ selected_station_id }}">
+                                <input type="hidden" name="selected_machine_id" value="{{ selected_machine_id }}">
                                 <input type="hidden" name="selected_time_window" value="{{ selected_time_window }}">
                                 <input type="hidden" name="power_action" value="on">
                                 <button type="submit" class="btn-on">Turn ON</button>
@@ -219,12 +232,59 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     let healthChart = null;
-    const healthLabels = [];
-    const machineTrendHistory = {};
+    let healthCanvas = null;
+    let fallbackPointMap = [];
+    const machineTrendHistory = [];
+    const initialTrendSeries = JSON.parse('{{ trend_series_json|escapejs }}');
+    const initialSelectedMachineName = JSON.parse('{{ selected_machine_name_json|escapejs }}');
 
     function initializeCharts() {
-        const healthCtx = document.getElementById("healthLineChart")?.getContext("2d");
-        if (!healthCtx) {
+        healthCanvas = document.getElementById("healthLineChart");
+        const healthCtx = healthCanvas?.getContext("2d");
+        if (!healthCanvas || !healthCtx) {
+            return;
+        }
+
+        if (typeof Chart === "undefined") {
+            healthCanvas.addEventListener("mousemove", function(event) {
+                if (!fallbackPointMap.length) {
+                    return;
+                }
+                const rect = healthCanvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                let closest = fallbackPointMap[0];
+                let minDistance = Math.abs(closest.x - x);
+
+                fallbackPointMap.forEach((point) => {
+                    const distance = Math.abs(point.x - x);
+                    if (distance < minDistance) {
+                        closest = point;
+                        minDistance = distance;
+                    }
+                });
+
+                updateReasonPanel(closest.machineName, closest.reason, closest.score);
+            });
+
+            healthCanvas.addEventListener("click", function(event) {
+                if (!fallbackPointMap.length) {
+                    return;
+                }
+                const rect = healthCanvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                let closest = fallbackPointMap[0];
+                let minDistance = Math.abs(closest.x - x);
+
+                fallbackPointMap.forEach((point) => {
+                    const distance = Math.abs(point.x - x);
+                    if (distance < minDistance) {
+                        closest = point;
+                        minDistance = distance;
+                    }
+                });
+
+                updateReasonPanel(closest.machineName, closest.reason, closest.score);
+            });
             return;
         }
 
@@ -232,7 +292,16 @@
             type: "line",
             data: {
                 labels: [],
-                datasets: [],
+                datasets: [{
+                    label: "Selected Machine",
+                    data: [],
+                    reasons: [],
+                    borderColor: "#22c55e",
+                    backgroundColor: "#22c55e",
+                    tension: 0.25,
+                    fill: false,
+                    pointRadius: 3,
+                }],
             },
             options: {
                 responsive: true,
@@ -247,7 +316,9 @@
                         callbacks: {
                             label: function(context) {
                                 const dataset = context.dataset || {};
-                                const score = context.raw;
+                                const score = Number.isFinite(context.parsed?.y)
+                                    ? context.parsed.y
+                                    : Number(context.raw || 0);
                                 const reason = (dataset.reasons || [])[context.dataIndex] || "No active downtime reason";
                                 return `${dataset.label}: ${score} | Reason: ${reason}`;
                             }
@@ -260,7 +331,7 @@
                     }
                     const first = activeElements[0];
                     const dataset = healthChart.data.datasets[first.datasetIndex];
-                    const score = dataset?.data?.[first.index];
+                    const score = Number(dataset?.data?.[first.index] ?? 0);
                     const reason = (dataset?.reasons || [])[first.index] || "No active downtime reason";
                     if (score !== undefined) {
                         updateReasonPanel(dataset.label, reason, score);
@@ -272,7 +343,7 @@
                     }
                     const first = activeElements[0];
                     const dataset = healthChart.data.datasets[first.datasetIndex];
-                    const score = dataset?.data?.[first.index];
+                    const score = Number(dataset?.data?.[first.index] ?? 0);
                     const reason = (dataset?.reasons || [])[first.index] || "No active downtime reason";
                     if (score !== undefined) {
                         updateReasonPanel(dataset.label, reason, score);
@@ -282,12 +353,110 @@
         });
     }
 
+    function drawFallbackChart(selectedMachineName) {
+        if (!healthCanvas) {
+            return;
+        }
+
+        const ctx = healthCanvas.getContext("2d");
+        if (!ctx) {
+            return;
+        }
+
+        const rect = healthCanvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const width = Math.max(1, Math.floor(rect.width * dpr));
+        const height = Math.max(1, Math.floor(rect.height * dpr));
+
+        if (healthCanvas.width !== width || healthCanvas.height !== height) {
+            healthCanvas.width = width;
+            healthCanvas.height = height;
+        }
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+
+        const w = rect.width;
+        const h = rect.height;
+        const padLeft = 36;
+        const padRight = 12;
+        const padTop = 12;
+        const padBottom = 24;
+        const plotW = Math.max(1, w - padLeft - padRight);
+        const plotH = Math.max(1, h - padTop - padBottom);
+
+        ctx.clearRect(0, 0, w, h);
+
+        ctx.strokeStyle = "rgba(148,163,184,0.3)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padLeft, padTop);
+        ctx.lineTo(padLeft, h - padBottom);
+        ctx.lineTo(w - padRight, h - padBottom);
+        ctx.stroke();
+
+        const yToPx = (value) => {
+            const clamped = Math.max(-1, Math.min(1, Number(value || 0)));
+            const normalized = (clamped + 1) / 2;
+            return padTop + (1 - normalized) * plotH;
+        };
+
+        const labels = machineTrendHistory.map((point) => {
+            const dt = new Date(point.x);
+            return Number.isNaN(dt.getTime()) ? String(point.x) : dt.toLocaleTimeString();
+        });
+
+        fallbackPointMap = [];
+        if (!machineTrendHistory.length) {
+            return;
+        }
+
+        ctx.strokeStyle = "#22c55e";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        machineTrendHistory.forEach((point, index) => {
+            const ratio = machineTrendHistory.length === 1 ? 0.5 : (index / (machineTrendHistory.length - 1));
+            const x = padLeft + ratio * plotW;
+            const y = yToPx(point.y);
+
+            fallbackPointMap.push({
+                x,
+                y,
+                score: Number(point.y || 0),
+                reason: point.reason || "No active downtime reason",
+                machineName: selectedMachineName || "Selected Machine",
+                label: labels[index] || "",
+            });
+
+            if (index === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+        ctx.stroke();
+
+        ctx.fillStyle = "#22c55e";
+        fallbackPointMap.forEach((point) => {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        ctx.fillStyle = "#cbd5e1";
+        ctx.font = "11px sans-serif";
+        ctx.fillText("1", 12, yToPx(1) + 4);
+        ctx.fillText("0", 12, yToPx(0) + 4);
+        ctx.fillText("-1", 8, yToPx(-1) + 4);
+    }
+
     function updateReasonPanel(machineName, reason, score) {
         const reasonContent = document.getElementById("reasonContent");
         if (!reasonContent) {
             return;
         }
-        reasonContent.textContent = `${machineName} | Score ${score} | Reason: ${reason}`;
+        reasonContent.textContent = `${machineName || "Selected Machine"} | Score ${score} | Reason: ${reason}`;
     }
 
     function updateTrendText() {
@@ -296,10 +465,8 @@
             return;
         }
 
-        const latestValues = healthChart.data.datasets
-            .map(dataset => dataset.data[dataset.data.length - 1]?.y)
-            .filter(value => Number.isFinite(value));
-        const avg = latestValues.length ? latestValues.reduce((a, b) => a + b, 0) / latestValues.length : 0;
+        const values = machineTrendHistory.map((point) => Number(point.y));
+        const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
 
         if (avg > 0) {
             trendText.innerHTML = '<span class="trend-up">↗ Trend Up (system improving)</span>';
@@ -346,6 +513,7 @@
         const csrfToken = document.querySelector("input[name='csrfmiddlewaretoken']")?.value || "";
         const selectedDepartmentId = document.getElementById("department_id")?.value || "";
         const selectedStationId = document.getElementById("station_id")?.value || "";
+        const selectedMachineId = document.getElementById("machine_id")?.value || "";
 
         if (!machineRows || !machineRows.length) {
             tbody.innerHTML = '<tr><td colspan="13">No machines available for your current access.</td></tr>';
@@ -398,6 +566,7 @@
                             <input type="hidden" name="machine_id" value="${row.machine_id}">
                             <input type="hidden" name="selected_department_id" value="${selectedDepartmentId}">
                             <input type="hidden" name="selected_station_id" value="${selectedStationId}">
+                            <input type="hidden" name="selected_machine_id" value="${selectedMachineId}">
                             <input type="hidden" name="selected_time_window" value="${document.getElementById("time_window")?.value || "24h"}">
                             <input type="hidden" name="power_action" value="${powerAction}">
                             <button type="submit" class="${buttonClass}">${buttonText}</button>
@@ -416,61 +585,48 @@
         });
     }
 
-    function updateMachineLineChart(machineRows, lineTimestamp) {
-        if (!healthChart) {
+    function updateMachineLineChart(trendSeries, selectedMachineName) {
+        if (!healthChart && !healthCanvas) {
             return;
         }
 
-        const ts = lineTimestamp || new Date().toLocaleTimeString();
+        machineTrendHistory.length = 0;
+        (Array.isArray(trendSeries) ? trendSeries : []).forEach((point) => {
+            machineTrendHistory.push({
+                x: point.x,
+                y: Number(point.y || 0),
+                reason: point.reason || "No active downtime reason",
+            });
+        });
 
-        healthLabels.push(ts);
-        if (healthLabels.length > 20) {
-            healthLabels.shift();
+        if (!machineTrendHistory.length) {
+            machineTrendHistory.push({
+                x: new Date().toISOString(),
+                y: 0,
+                reason: "No active downtime reason",
+            });
         }
 
-        machineRows.forEach((row) => {
-            if (!machineTrendHistory[row.machine_name]) {
-                machineTrendHistory[row.machine_name] = {
-                    values: [],
-                    reasons: [],
-                };
-            }
-            machineTrendHistory[row.machine_name].values.push(row.trend_score ?? 0);
-            machineTrendHistory[row.machine_name].reasons.push(row.active_reason || "No active downtime reason");
-
-            if (machineTrendHistory[row.machine_name].values.length > 20) {
-                machineTrendHistory[row.machine_name].values.shift();
-                machineTrendHistory[row.machine_name].reasons.shift();
-            }
-        });
-
-        const machineNames = machineRows.map(row => row.machine_name);
-        Object.keys(machineTrendHistory).forEach((name) => {
-            if (!machineNames.includes(name)) {
-                delete machineTrendHistory[name];
-            }
-        });
-
-        const palette = ["#22c55e", "#3b82f6", "#f59e0b", "#f97316", "#06b6d4", "#a855f7", "#ef4444", "#84cc16"];
-        healthChart.data.labels = [...healthLabels];
-        healthChart.data.datasets = Object.keys(machineTrendHistory).map((machineName, idx) => ({
-            label: machineName,
-            data: machineTrendHistory[machineName].values,
-            reasons: machineTrendHistory[machineName].reasons,
-            borderColor: palette[idx % palette.length],
-            backgroundColor: palette[idx % palette.length],
-            tension: 0.25,
-            fill: false,
-            pointRadius: 3,
-        }));
-
-        healthChart.update();
+        if (healthChart) {
+            const dataset = healthChart.data.datasets[0];
+            dataset.label = selectedMachineName || "Selected Machine";
+            dataset.data = machineTrendHistory.map((point) => point.y);
+            dataset.reasons = machineTrendHistory.map((point) => point.reason);
+            healthChart.data.labels = machineTrendHistory.map((point) => {
+                const dt = new Date(point.x);
+                return Number.isNaN(dt.getTime()) ? String(point.x) : dt.toLocaleTimeString();
+            });
+            healthChart.update();
+        } else {
+            drawFallbackChart(selectedMachineName || "Selected Machine");
+        }
     }
 
     async function refreshLiveData() {
         const params = new URLSearchParams({
             department_id: document.getElementById("department_id")?.value || "",
             station_id: document.getElementById("station_id")?.value || "",
+            machine_id: document.getElementById("machine_id")?.value || "",
             time_window: document.getElementById("time_window")?.value || "24h",
         });
 
@@ -504,7 +660,7 @@
             }
 
             renderMachineRows(payload.machine_rows || []);
-            updateMachineLineChart(payload.machine_rows || [], payload.line_timestamp);
+            updateMachineLineChart(payload.trend_series || [], payload.selected_machine_name || "Selected Machine");
             updateTrendText();
             renderCallRows(payload.call_rows || []);
             updateMachineBars();
@@ -516,6 +672,8 @@
     document.addEventListener("DOMContentLoaded", function() {
         updateMachineBars();
         initializeCharts();
+        updateMachineLineChart(initialTrendSeries || [], initialSelectedMachineName || "Selected Machine");
+        updateTrendText();
         refreshLiveData();
         setInterval(refreshLiveData, 5000);
     });

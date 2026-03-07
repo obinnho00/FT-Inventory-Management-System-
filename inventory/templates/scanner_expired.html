@@ -21,8 +21,13 @@
         <img src="{% static 'image/Abblogo.png' %}" alt="ABB Logo" class="logo-image">
     </div>
     <section class="card">
+        {% if scanner_state == 'cancelled' %}
+        <h1>Call Canceled</h1>
+        <p>This call was canceled. Please scan the station QR code again for a new request.</p>
+        {% else %}
         <h1>Work Completed</h1>
         <p>This scanner session is closed. Please scan the station QR code again for a new request.</p>
+        {% endif %}
     </section>
 </div>
 </body>

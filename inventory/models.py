@@ -487,6 +487,7 @@ class WorkOrderRequest(models.Model):
     completed_by_email = models.EmailField(blank=True)
 
     scanned_at = models.DateTimeField(auto_now_add=True)
+    downtime_started_at = models.DateTimeField(null=True, blank=True)
     accessed_at = models.DateTimeField(null=True, blank=True)
     responded_at = models.DateTimeField(null=True, blank=True)
     accepted_at = models.DateTimeField(null=True, blank=True)
@@ -572,3 +573,4 @@ class InventoryReminder(models.Model):
 
     def __str__(self):
         return f"{self.department.name} | {self.machine_part.machine.name} | {self.machine_part.part.model_number} <= {self.alert_quantity}"
+
