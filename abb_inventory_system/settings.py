@@ -128,22 +128,37 @@ WSGI_APPLICATION = 'abb_inventory_system.wsgi.application'
 
 import dj_database_url
 
-DATABASE_URL = (
-    os.environ.get("DATABASE_URL")
-    or os.environ.get("PRODUCTION_DB")
-    or os.environ.get("Production_db")
-)
+USE_LOCAL_SQLITE = _env_bool("USE_LOCAL_SQLITE", default=False)
+LOCAL_DATABASE_URL = (os.environ.get("LOCAL_DATABASE_URL", "") or "").strip()
 
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL is not set (accepted keys: DATABASE_URL, PRODUCTION_DB, Production_db)")
-
-DATABASES = {
-    "default": dj_database_url.parse(
-        DATABASE_URL,
-        conn_max_age=600,
-        ssl_require=not DEBUG,
+if USE_LOCAL_SQLITE:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
+else:
+    DATABASE_URL = (
+        LOCAL_DATABASE_URL
+        or os.environ.get("DATABASE_URL")
+        or os.environ.get("PRODUCTION_DB")
+        or os.environ.get("Production_db")
     )
-}
+
+    if not DATABASE_URL:
+        raise ValueError(
+            "DATABASE_URL is not set (accepted keys: DATABASE_URL, PRODUCTION_DB, Production_db) "
+            "or set USE_LOCAL_SQLITE=1 for local development."
+        )
+
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=not DEBUG,
+        )
+    }
 
 
 

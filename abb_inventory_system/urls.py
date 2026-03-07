@@ -44,6 +44,9 @@ urlpatterns = [
     path('inventory/work-station/cancel/', views.work_station_cancel_request, name='work_station_cancel'),
     path('inventory/work-station/machine-parts/', views.work_station_machine_parts, name='work_station_machine_parts'),
     path('inventory/work-station/record-part-usage/', views.work_station_record_part_usage, name='work_station_record_part_usage'),
+    path('inventory/engineering/machine-uptime/', views.engineering_machine_uptime_view, name='engineering_machine_uptime'),
+    path('inventory/engineering/machine-uptime/live-data/', views.engineering_machine_uptime_live_data, name='engineering_machine_uptime_live_data'),
+    path('inventory/engineering/machine-power/', views.engineering_machine_power_toggle, name='engineering_machine_power_toggle'),
 
     path("inventory/search/", views.inventory_search, name="inventory_search"),
 
