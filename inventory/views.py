@@ -2466,6 +2466,13 @@ def work_station_live_status(request):
             .first()
         )
 
+        # Send notification email if there is an active work order
+        if latest:
+            try:
+                work_order_notification(station.id)
+            except Exception:
+                pass
+
         return JsonResponse(
             {
                 "ok": True,
@@ -3111,18 +3118,9 @@ def work_station_scan_call(request):
         downtime_started_at=downtime_started_at,
     )
 
-    # Send notification to ALL reminder emails for this department
-    from .models import InventoryReminder
-    from django.core.mail import send_mail
-    from django.conf import settings
-    from django.template.loader import render_to_string
-    from django.utils.html import strip_tags
-    from django.urls import reverse
-    reminder_emails = list(InventoryReminder.objects.filter(
-        department=station.department,
-        is_active=True
-    ).values_list('notify_email', flat=True))
-    if reminder_emails:
+    # Send notification only to the currently logged-in user's email (from session)
+    user_info = request.session.get("inventory_user")
+    if user_info and user_info.get("email"):
         accept_url = settings.APP_BASE_URL + reverse('work_order_accept', kwargs={'work_order_id': work_order.id})
         subject = f"Work Order Call for Station: {station.name}"
         context = {
@@ -3141,12 +3139,13 @@ def work_station_scan_call(request):
                 subject,
                 text_body,
                 from_email,
-                reminder_emails,
+                [user_info["email"]],
                 html_message=html_body,
                 fail_silently=False,
             )
-        except Exception:
-            pass
+            print(f"Work order notification email sent to: {user_info['email']}")
+        except Exception as e:
+            print(f"Failed to send work order notification email to: {user_info['email']} | Error: {e}")
 
     if _is_ajax_request(request):
         return JsonResponse({"ok": True, "message": "Call sent."})
@@ -3850,12 +3849,16 @@ def work_order_notification(station_id):
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@abb-inventory.local")
     to_email = [authorized_user.email]
     
-    send_mail(
-        subject,
-        text_body,
-        from_email,
-        to_email,
-        html_message=html_body,
-        fail_silently=False,
-    )
+    try:
+        send_mail(
+            subject,
+            text_body,
+            from_email,
+            to_email,
+            html_message=html_body,
+            fail_silently=False,
+        )
+        print(f"Work order notification email sent to: {to_email}")
+    except Exception as e:
+        print(f"Failed to send work order notification email to: {to_email} | Error: {e}")
     return True

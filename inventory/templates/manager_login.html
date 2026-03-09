@@ -29,41 +29,36 @@
 {% endblock %}
 
 {% block content %}
-<div class="wrap">
-    <div class="head">
-        
-    </div>
-
-    {% if False and messages %}
-    <ul class="msg-list">
-        {% for message in messages %}
-            <li class="{{ message.tags|default:'info' }}">{{ message }}</li>
-        {% endfor %}
-    </ul>
-    {% endif %}
-
-    <div class="login-image-wrap">
-        <img src="{% static 'image/Abblogo.png' %}" alt="ABB Header" class="login-image">
-    </div>
-
-    <div class="card">
-        <h2>Manager SignIn Only</h2>
-        <form method="post" action="{% url 'manager_login' %}">
-            {% csrf_token %}
-            <div class="field">
-                <label for="manager_email">Manager Email</label>
-                <input id="manager_email" name="email" type="email" required>
+<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:90vh;">
+    <div class="wrap" style="width:100%; max-width:760px;">
+        <div class="head"></div>
+        {% if False and messages %}
+        <ul class="msg-list">
+            {% for message in messages %}
+                <li class="{{ message.tags|default:'info' }}">{{ message }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        <div class="login-image-wrap">
+            <img src="{% static 'image/Abblogo.png' %}" alt="ABB Header" class="login-image">
+        </div>
+        <div class="card">
+            <h2>Manager SignIn Only</h2>
+            <form method="post" action="{% url 'manager_login' %}">
+                {% csrf_token %}
+                <div class="field">
+                    <label for="manager_email">Manager Email</label>
+                    <input id="manager_email" name="email" type="email" required>
+                </div>
+                <div class="field">
+                    <label for="manager_code">Manager Access Code</label>
+                    <input id="manager_code" name="manager_code" type="password" required>
+                </div>
+                <button class="btn" type="submit">Sign In</button>
+            </form>
+            <div class="links">
+                <a href="{% url 'manager_admin' %}">Admin Config</a>
             </div>
-            <div class="field">
-                <label for="manager_code">Manager Access Code</label>
-                <input id="manager_code" name="manager_code" type="password" required>
-            </div>
-            <button class="btn" type="submit">Sign In</button>
-        </form>
-
-        <div class="links">
-            <a href="{% url 'manager_admin' %}">Admin Config</a>
-            
         </div>
     </div>
 </div>
