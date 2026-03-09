@@ -5,8 +5,32 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'Css/SetReminder.css' %}">
-{% endblock %}
 
+<style>
+
+/* UNIVERSAL DASHBOARD BUTTON STYLE */
+
+.reminder-save-btn {
+	background: #334155 !important;
+	color: #ffffff !important;
+	border: none !important;
+	border-radius: 5px !important;
+	padding: 6px 14px !important;
+	font-size: 14px !important;
+	cursor: pointer !important;
+	transition: background 0.2s ease;
+}
+
+button:hover,
+.btn:hover,
+.btn-danger:hover,
+.reminder-save-btn:hover {
+	background: #475569 !important;
+}
+
+</style>
+
+{% endblock %}
 {% block content %}
 <div class="reminder-wrap">
 	<div class="reminder-head">

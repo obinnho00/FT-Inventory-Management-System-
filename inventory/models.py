@@ -1,6 +1,8 @@
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.hashers import make_password, check_password
+from django.db.models import Q
+from datetime import datetime, timedelta
 
 
 # ==========================================
@@ -493,6 +495,8 @@ class WorkOrderRequest(models.Model):
     accepted_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    machine_running_after_repair = models.BooleanField(null=True, blank=True)
+    total_minutes = models.PositiveIntegerField(null=True, blank=True, help_text="Total minutes (rounded, payroll style)")
 
     class Meta:
         db_table = "inventory_work_order_request"

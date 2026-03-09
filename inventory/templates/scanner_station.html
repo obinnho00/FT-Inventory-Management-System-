@@ -48,7 +48,7 @@
     <div class="logo-wrap">
         <img src="{% static 'image/Abblogo.png' %}" alt="ABB Logo" class="logo-image">
     </div>
-    {% if messages %}
+    {% if False and messages %}
     <ul class="msg-list">
         {% for message in messages %}
             <li class="{{ message.tags|default:'info' }}">{{ message }}</li>
@@ -134,6 +134,14 @@
                     <option value="no">No</option>
                 </select>
             </div>
+            <div class="usage-field">
+                <label for="scannerMachineRunningSelect">After repair, is the machine currently running?</label>
+                <select id="scannerMachineRunningSelect">
+                    <option value="">Select an option</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                </select>
+            </div>
             <div id="scannerUsageFields" style="display:none;">
                 <div class="usage-field">
                     <label for="scannerPartSelect">Part (for this station machine only)</label>
@@ -175,6 +183,7 @@
     const scannerUsageModal = document.getElementById("scannerUsageModal");
     const scannerUsageClose = document.getElementById("scannerUsageClose");
     const scannerUsedSelect = document.getElementById("scannerUsedSelect");
+    const scannerMachineRunningSelect = document.getElementById("scannerMachineRunningSelect");
     const scannerUsageFields = document.getElementById("scannerUsageFields");
     const scannerPartSelect = document.getElementById("scannerPartSelect");
     const scannerQtyInput = document.getElementById("scannerQtyInput");
@@ -315,8 +324,13 @@
         }
     }
 
-    async function postAction(form) {
+    async function postAction(form, extraFields) {
         const formData = new FormData(form);
+        if (extraFields) {
+            Object.keys(extraFields).forEach((key) => {
+                formData.set(key, extraFields[key]);
+            });
+        }
         const response = await fetch(form.action, {
             method: "POST",
             body: formData,
@@ -346,6 +360,9 @@
             if (form.classList.contains("js-scanner-complete")) {
                 if (scannerUsageModal) {
                     scannerUsedSelect.value = "";
+                    if (scannerMachineRunningSelect) {
+                        scannerMachineRunningSelect.value = "";
+                    }
                     scannerUsageFields.style.display = "none";
                     scannerQtyInput.value = "";
                     scannerUsageModal.style.display = "flex";
@@ -383,13 +400,18 @@
                 window.alert("Please answer if you used inventory before completing.");
                 return;
             }
+            const runningAnswer = scannerMachineRunningSelect ? (scannerMachineRunningSelect.value || "").trim().toLowerCase() : "";
+            if (!runningAnswer) {
+                window.alert("Please confirm if the machine is running after repair.");
+                return;
+            }
             const usageResult = await submitScannerUsageIfNeeded();
             if (!usageResult.ok) {
                 window.alert(usageResult.message || "Could not save inventory usage.");
                 return;
             }
             closeUsageModal();
-            await postAction(completeForm);
+            await postAction(completeForm, { machine_running_after_repair: runningAnswer });
         });
     }
 

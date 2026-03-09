@@ -5,7 +5,14 @@
 {% block extra_css %}
 <style>
 	body { background-color: #1E293B; }
-	.wrap { width: 100%; max-width: 1650px; margin: 24px auto; padding: 0 18px 28px; color: #e2e8f0; }
+	.wrap {
+		width: 100vw;
+		max-width: 100vw;
+		margin: 0;
+		padding: 0 0 28px 0;
+		color: #e2e8f0;
+		box-sizing: border-box;
+	}
 	.head { text-align: center; margin-bottom: 14px; }
 	.head h2 { margin: 0 0 4px; color: #fff; font-size: 22px; font-weight: 500; }
 	.head p { margin: 0; color: #cbd5e1; font-size: 13px; }
@@ -37,6 +44,23 @@
 	.alert-card h4 { margin: 0 0 8px; color: #fff; font-size: 16px; }
 	.alert-line { margin: 3px 0; color: #cbd5e1; font-size: 13px; }
 	.alert-actions { margin-top: 10px; display: flex; gap: 8px; }
+	.state-panel { margin-top: 16px; background: rgba(30,41,59,0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 14px; }
+	.state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-top: 12px; }
+	.state-card { border-radius: 10px; padding: 12px; }
+	.state-card-running { background: rgba(22,163,74,0.28); border: 1px solid rgba(22,163,74,0.62); }
+	.state-card-off { background: rgba(220,38,38,0.28); border: 1px solid rgba(220,38,38,0.62); }
+	.state-card-worked { background: rgba(245,158,11,0.22); border: 1px solid rgba(245,158,11,0.58); }
+	.state-card h4 { margin: 0 0 8px; color: #fff; font-size: 16px; }
+	.state-line { margin: 4px 0; color: #cbd5e1; font-size: 13px; }
+	.state-actions { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+	.btn-state { padding: 4px 8px; font-size: 11px; border-radius: 6px; font-weight: 600; }
+	.btn-off { background: #b91c1c; color: #fff; }
+	.btn-down { background: #15803d; color: #fff; }
+	.btn-on { background: #16a34a; color: #fff; }
+	.bulk-row { display: flex; justify-content: flex-end; gap: 8px; }
+	.state-feedback { margin-top: 8px; font-size: 12px; color: #cbd5e1; min-height: 18px; }
+	.state-feedback.error { color: #fecaca; }
+	.state-feedback.success { color: #bbf7d0; }
 	.work-filter-row { display: grid; grid-template-columns: 200px 1fr; gap: 10px; margin-bottom: 10px; }
 	.work-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; max-height: 460px; overflow-y: auto; padding-right: 4px; }
 	.work-card { background: rgba(15,29,45,0.92); border: 1px solid rgba(255,255,255,0.16); border-radius: 10px; padding: 12px; }
@@ -86,7 +110,7 @@
 	</div>
 	<div class="now-time" id="ncNowDisplay">North Carolina Time: {{ current_nc_time }}</div>
 
-	{% if messages %}
+	{% if False and messages %}
 	<ul class="msg-list">
 		{% for message in messages %}
 			<li class="{{ message.tags|default:'info' }}">{{ message }}</li>
@@ -199,6 +223,69 @@
 			</div>
 			{% empty %}
 			<div class="alert-card"><p class="alert-line">No active station help alerts.</p></div>
+			{% endfor %}
+		</div>
+	</section>
+
+	<section class="state-panel">
+		<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+			<h3 style="margin:0; color:#fff;">Station Machine State Control</h3>
+			<form method="post" action="{% url 'work_station_bulk_on' %}" class="bulk-row js-machine-bulk-form">
+				{% csrf_token %}
+				<input type="hidden" name="selected_department_id" value="{{ selected_department_filter_id }}">
+				<input type="hidden" name="selected_station_id" value="{{ selected_station_filter_id }}">
+				{% for machine in state_machine_cards %}
+				<input type="hidden" name="machine_ids" value="{{ machine.id }}">
+				{% endfor %}
+				<button type="submit" name="requested_state" value="on" class="btn btn-on btn-state">All ON</button>
+				<button type="submit" name="requested_state" value="off" class="btn btn-off btn-state">All OFF</button>
+			</form>
+		</div>
+		<div id="statePanelMessage" class="state-feedback" aria-live="polite"></div>
+
+		<div class="state-grid">
+			{% for machine in state_machine_cards %}
+			<div id="state-machine-{{ machine.id }}" data-machine-id="{{ machine.id }}" class="state-card {% if machine.status == 'Running' %}state-card-running{% elif machine.status == 'Idle' %}state-card-off{% else %}state-card-worked{% endif %}">
+				<h4>{{ machine.name }}</h4>
+				<p class="state-line"><strong>Department:</strong> {{ machine.department.name }}</p>
+				<p class="state-line"><strong>Station:</strong> {{ machine.station.name|default:'-' }}</p>
+				<p class="state-line"><strong>Current State:</strong>
+					{% if machine.status == 'Running' %}
+						<span class="tag tag-status-coming js-machine-state-label">Running</span>
+					{% elif machine.status == 'Idle' %}
+						<span class="tag tag-status-cancelled js-machine-state-label">Off</span>
+					{% else %}
+						<span class="tag tag-medium js-machine-state-label">Being Worked On</span>
+					{% endif %}
+				</p>
+				<div class="state-actions">
+					<form method="post" action="{% url 'work_station_set_machine_state' %}" class="js-machine-state-form">
+						{% csrf_token %}
+						<input type="hidden" name="machine_id" value="{{ machine.id }}">
+						<input type="hidden" name="selected_department_id" value="{{ selected_department_filter_id }}">
+						<input type="hidden" name="selected_station_id" value="{{ selected_station_filter_id }}">
+						<button type="submit" name="requested_state" value="off" class="btn btn-off btn-state">Off</button>
+					</form>
+					<form method="post" action="{% url 'work_station_set_machine_state' %}" class="js-machine-state-form">
+						{% csrf_token %}
+						<input type="hidden" name="machine_id" value="{{ machine.id }}">
+						<input type="hidden" name="selected_department_id" value="{{ selected_department_filter_id }}">
+						<input type="hidden" name="selected_station_id" value="{{ selected_station_filter_id }}">
+						<button type="submit" name="requested_state" value="down" class="btn btn-down btn-state">Under Repair</button>
+					</form>
+					<form method="post" action="{% url 'work_station_set_machine_state' %}" class="js-machine-state-form">
+						{% csrf_token %}
+						<input type="hidden" name="machine_id" value="{{ machine.id }}">
+						<input type="hidden" name="selected_department_id" value="{{ selected_department_filter_id }}">
+						<input type="hidden" name="selected_station_id" value="{{ selected_station_filter_id }}">
+						<button type="submit" name="requested_state" value="on" class="btn btn-on btn-state">Running</button>
+					</form>
+				</div>
+			</div>
+			{% empty %}
+			<div class="state-card">
+				<p class="state-line">No station machines found for this filter.</p>
+			</div>
 			{% endfor %}
 		</div>
 	</section>
@@ -337,6 +424,14 @@
 					<option value="no">No</option>
 				</select>
 			</div>
+			<div class="field">
+				<label for="completeMachineRunningAnswer">After repair, is the machine currently running?</label>
+				<select id="completeMachineRunningAnswer">
+					<option value="">Select an option</option>
+					<option value="yes">Yes</option>
+					<option value="no">No</option>
+				</select>
+			</div>
 			<div id="completeUsageFields" style="display:none;">
 				<div class="field">
 					<label for="completeUsagePartSelect">Part used (this machine)</label>
@@ -383,13 +478,29 @@
 	const completeUsageCloseBtn = document.getElementById("completeUsageCloseBtn");
 	const completeUsageMachineText = document.getElementById("completeUsageMachineText");
 	const completeUsageAnswer = document.getElementById("completeUsageAnswer");
+	const completeMachineRunningAnswer = document.getElementById("completeMachineRunningAnswer");
 	const completeUsageFields = document.getElementById("completeUsageFields");
 	const completeUsagePartSelect = document.getElementById("completeUsagePartSelect");
 	const completeUsageQtyInput = document.getElementById("completeUsageQtyInput");
 	const completeUsageSubmitBtn = document.getElementById("completeUsageSubmitBtn");
+	const statePanelMessage = document.getElementById("statePanelMessage");
 	const csrfToken = "{{ csrf_token }}";
+	let liveRefreshTimer = null;
+	let livePollingStopped = false;
 	let activeUsageWorkOrderId = "";
 	let activeCompleteForm = null;
+
+	function stopLivePolling(reasonText) {
+		if (livePollingStopped) return;
+		livePollingStopped = true;
+		if (liveRefreshTimer) {
+			clearInterval(liveRefreshTimer);
+			liveRefreshTimer = null;
+		}
+		if (nowDisplay && reasonText) {
+			nowDisplay.textContent = reasonText;
+		}
+	}
 
 	function setupWorkRequestsCollapse() {
 		if (!toggleWorkRequestsBtn || !workRequestsPanelBody) return;
@@ -514,6 +625,88 @@
 		});
 	}
 
+	function setStatePanelMessage(message, kind) {
+		if (!statePanelMessage) return;
+		statePanelMessage.textContent = message || "";
+		statePanelMessage.classList.remove("error", "success");
+		if (kind === "error") {
+			statePanelMessage.classList.add("error");
+		} else if (kind === "success") {
+			statePanelMessage.classList.add("success");
+		}
+	}
+
+	function getStatePresentation(status) {
+		if (status === "Running") {
+			return {
+				cardClass: "state-card-running",
+				tagClass: "tag-status-coming",
+				label: "Running",
+			};
+		}
+		if (status === "Idle") {
+			return {
+				cardClass: "state-card-off",
+				tagClass: "tag-status-cancelled",
+				label: "Off",
+			};
+		}
+		return {
+			cardClass: "state-card-worked",
+			tagClass: "tag-medium",
+			label: "Being Worked On",
+		};
+	}
+
+	function applyMachineStateCard(machineId, status, statusLabel) {
+		const card = document.getElementById(`state-machine-${machineId}`);
+		if (!card) return;
+		const view = getStatePresentation(status);
+		card.classList.remove("state-card-running", "state-card-off", "state-card-worked");
+		card.classList.add(view.cardClass);
+		const label = card.querySelector(".js-machine-state-label");
+		if (label) {
+			label.classList.remove("tag-status-coming", "tag-status-cancelled", "tag-medium");
+			label.classList.add(view.tagClass);
+			label.textContent = statusLabel || view.label;
+		}
+	}
+
+	async function submitMachineStateForm(form, submitter) {
+		const body = new FormData(form);
+		if (submitter && submitter.name && !body.get(submitter.name)) {
+			body.set(submitter.name, submitter.value || "");
+		}
+		const response = await fetch(form.action, {
+			method: "POST",
+			body,
+			headers: { "X-Requested-With": "XMLHttpRequest" },
+		});
+		const data = await response.json().catch(() => ({ ok: false, message: "Could not update machine state." }));
+		if (!response.ok || !data.ok) {
+			setStatePanelMessage(data.message || "Could not update machine state.", "error");
+			return;
+		}
+		if (data.machine_id) {
+			applyMachineStateCard(data.machine_id, data.status, data.status_label);
+		}
+		if (Array.isArray(data.updated_machine_ids) && data.status) {
+			data.updated_machine_ids.forEach((machineId) => {
+				applyMachineStateCard(machineId, data.status, null);
+			});
+		}
+		setStatePanelMessage(data.message || "Machine state updated.", "success");
+	}
+
+	function bindMachineStateForms() {
+		document.querySelectorAll(".js-machine-state-form, .js-machine-bulk-form").forEach((form) => {
+			form.addEventListener("submit", async (event) => {
+				event.preventDefault();
+				await submitMachineStateForm(form, event.submitter || null);
+			});
+		});
+	}
+
 	function openUsageModal(workOrderId, machineName) {
 		activeUsageWorkOrderId = workOrderId;
 		usageMachineText.textContent = `Machine: ${machineName || "-"}`;
@@ -592,13 +785,24 @@
 	}
 
 	async function refreshLiveData() {
+		if (livePollingStopped) return;
 		const departmentId = departmentSelect ? departmentSelect.value : "";
 		const stationId = stationSelect ? stationSelect.value : "";
 		const url = `{% url 'work_station_live_status' %}?department_id=${encodeURIComponent(departmentId || "")}&filter_station_id=${encodeURIComponent(stationId || "")}`;
 		const response = await fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+		if (response.status === 401 || response.status === 403) {
+			stopLivePolling("Live updates stopped: access denied. Please login again.");
+			return;
+		}
 		if (!response.ok) return;
 		const data = await response.json();
-		if (!data.ok) return;
+		if (!data.ok) {
+			const messageText = (data.message || "").toLowerCase();
+			if (messageText.includes("login") || messageText.includes("not allowed") || messageText.includes("forbidden")) {
+				stopLivePolling("Live updates stopped: access denied. Please login again.");
+			}
+			return;
+		}
 		if (nowDisplay) {
 			nowDisplay.textContent = `North Carolina Time: ${data.now}`;
 		}
@@ -613,12 +817,14 @@
 				body.set(key, extraFields[key]);
 			});
 		}
-		await fetch(form.action, {
+		const response = await fetch(form.action, {
 			method: "POST",
 			body,
 			headers: { "X-Requested-With": "XMLHttpRequest" }
 		});
+		const responseData = await response.json().catch(() => ({}));
 		await refreshLiveData();
+		return responseData;
 	}
 
 	function bindActionForms() {
@@ -634,6 +840,9 @@
 					}
 					if (completeUsageAnswer) {
 						completeUsageAnswer.value = "";
+					}
+					if (completeMachineRunningAnswer) {
+						completeMachineRunningAnswer.value = "";
 					}
 					if (completeUsageFields) {
 						completeUsageFields.style.display = "none";
@@ -735,6 +944,11 @@
 				window.alert("Please answer if inventory was used before completion.");
 				return;
 			}
+			const runningAnswer = completeMachineRunningAnswer ? (completeMachineRunningAnswer.value || "").trim().toLowerCase() : "";
+			if (!runningAnswer) {
+				window.alert("Please confirm if the machine is running after repair.");
+				return;
+			}
 			if (answer === "yes") {
 				const machinePartId = completeUsagePartSelect ? completeUsagePartSelect.value : "";
 				const usedQty = completeUsageQtyInput ? completeUsageQtyInput.value : "";
@@ -766,7 +980,13 @@
 			if (completeUsageModal) {
 				completeUsageModal.style.display = "none";
 			}
-			await submitLiveForm(activeCompleteForm, { inventory_used_answer: answer });
+			const completionData = await submitLiveForm(activeCompleteForm, {
+				inventory_used_answer: answer,
+				machine_running_after_repair: runningAnswer,
+			});
+			if (completionData && completionData.machine_id && completionData.machine_status) {
+				applyMachineStateCard(completionData.machine_id, completionData.machine_status, completionData.machine_status_label || null);
+			}
 			activeCompleteForm = null;
 		});
 	}
@@ -780,11 +1000,12 @@
 	}
 
 	bindActionForms();
+	bindMachineStateForms();
 	bindMachineLinks();
 	setupWorkRequestsCollapse();
 	applyWorkOrderFilters();
 	refreshLiveData();
-	setInterval(refreshLiveData, 3000);
+	liveRefreshTimer = setInterval(refreshLiveData, 3000);
 })();
 </script>
 {% endif %}

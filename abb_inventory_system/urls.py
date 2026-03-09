@@ -15,6 +15,7 @@ urlpatterns = [
 
     path('home/', views.Home, name='home'),
 
+
     path('inventory/login/', views.inventory_login_view, name='inventory_login'),
     path('inventory/verify-email/<str:token>/', views.verify_authorized_user_email, name='verify_authorized_user_email'),
     path('inventory/manager/verify-email/<str:token>/', views.verify_manager_email, name='verify_manager_email'),
@@ -42,6 +43,8 @@ urlpatterns = [
     path('inventory/work-station/accept/', views.work_station_accept_request, name='work_station_accept'),
     path('inventory/work-station/complete/', views.work_station_complete_request, name='work_station_complete'),
     path('inventory/work-station/cancel/', views.work_station_cancel_request, name='work_station_cancel'),
+    path('inventory/work-station/set-machine-state/', views.work_station_set_machine_state, name='work_station_set_machine_state'),
+    path('inventory/work-station/bulk-on/', views.work_station_bulk_on, name='work_station_bulk_on'),
     path('inventory/work-station/machine-parts/', views.work_station_machine_parts, name='work_station_machine_parts'),
     path('inventory/work-station/record-part-usage/', views.work_station_record_part_usage, name='work_station_record_part_usage'),
 

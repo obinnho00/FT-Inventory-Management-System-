@@ -5,59 +5,106 @@
 
 {% block extra_css %}
 <style>
-    .requirement-wrapper {
-        margin-top: -36px;
+    body, main {
+        background: #1E293B !important;
     }
-
+    .requirement-wrapper {
+        width: 100vw;
+        min-height: 100vh;
+        margin: 0;
+        padding: 0;
+        background: #1E293B !important;
+        display: block;
+    }
     .requirement-card {
-        padding-top: 44px;
+        width: 100vw;
+        min-height: 100vh;
+        background: #1E293B !important;
+        color: #F8FAFC;
+        padding: 80px 32px 48px 32px;
+        border-radius: 0;
+        box-shadow: none;
+        margin: 0;
+        display: block;
+    }
+    .requirement-header {
+        text-align: center;
+        margin-bottom: 50px;
+    }
+    .requirement-header h2 {
+        font-size: 28px;
+        margin-bottom: 20px;
+        color: #fff;
+    }
+    .requirement-header p {
+        max-width: 900px;
+        margin: 0 auto 20px auto;
+        line-height: 1.8;
+        color: #CBD5E1;
+    }
+    .requirement-header strong {
+        color: #38BDF8;
+    }
+    .form-group label {
+        color: #cbd5e1;
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        background-color: #334155;
+        color: #fff;
+        border: 1px solid #475569;
+    }
+    .submit-btn {
+        background: #2563EB;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 14px 32px;
+        cursor: pointer;
+        margin: 30px auto 0 auto;
+        display: block;
+        font-size: 16px;
+        font-weight: 600;
+        box-shadow: 0 2px 8px rgba(37,99,235,0.08);
+        transition: background 0.2s;
+    }
+    .submit-btn:hover {
+        background: #1D4ED8;
+    }
+    @media (max-width: 768px) {
+        .requirement-card {
+            padding: 40px 10px;
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-
 <div class="requirement-wrapper">
     <div class="requirement-card">
-        {% if messages %}
-            <div id="flashMessages" class="flash-messages" role="status" aria-live="polite">
-                {% for message in messages %}
-                    <div class="flash-message {% if message.tags == 'success' %}flash-success{% else %}flash-error{% endif %}">
-                        <div class="flash-content">
-                            <div class="flash-title">{% if message.tags == 'success' %}Submission successful{% else %}Please review{% endif %}</div>
-                            <div class="flash-text">{{ message }}</div>
-                        </div>
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
-
         <div class="requirement-header">
-        
-        <h2>Department Specific System User & Software Requirements</h2>
-        <p>
-            This system is currently being developed by <strong> Obinna </strong> and is designed to support 
-            department specific operations and workflows.
-        </p>
-        <p>
-            Each department may submit requests for custom system features, automation improvements, 
-            reporting tools, or software enhancements tailored to their specific operational needs.
-        </p>
-        <p> 
-            Requirements submitted by department managers will be treated as high-priority requests 
-            and evaluated first to ensure alignment with operational goals, performance improvement, 
-            and overall departmental efficiency.
-        </p>
+            <h2>Department Specific System User & Software Requirements</h2>
+            <p>
+                This system is currently being developed by <strong>Obinna</strong> and is designed to support 
+                department specific operations and workflows.
+            </p>
+            <p>
+                Each department may submit requests for custom system features, automation improvements, 
+                reporting tools, or software enhancements tailored to their specific operational needs.
+            </p>
+            <p> 
+                Requirements submitted by department managers will be treated as high-priority requests 
+                and evaluated first to ensure alignment with operational goals, performance improvement, 
+                and overall departmental efficiency.
+            </p>
         </div>
-
         <form method="POST" action="{% url 'submit_requirement' %}">
             {% csrf_token %}
-
             <div class="form-group">
                 <label>Your Name</label>
                 <input type="text" name="name" required>
             </div>
-
             <div class="form-group">
                 <label>Department</label>
                 <select name="department" required>
@@ -67,20 +114,16 @@
                     {% endfor %}
                 </select>
             </div>
-
             <div class="form-group">
                 <label>Requirement</label>
                 <textarea name="message" rows="5" required></textarea>
             </div>
-
             <button type="submit" class="submit-btn">
                 Submit Requirement
             </button>
         </form>
-
     </div>
 </div>
-
 {% endblock %}
 
 {% block extra_js %}
@@ -90,7 +133,6 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!flash) {
         return;
     }
-
     setTimeout(function () {
         flash.classList.add('flash-messages-hide');
         setTimeout(function () {

@@ -116,6 +116,7 @@ def _build_shared_template_context(request):
     }
 
 def _render_template(request, template_name, context=None):
+    list(messages.get_messages(request))
     shared_context = _build_shared_template_context(request)
     if context:
         shared_context.update(context)
@@ -2403,6 +2404,22 @@ def work_station_view(request):
     else:
         active_alerts = []
 
+    if not scan_flag:
+        state_machine_cards_queryset = Machine.objects.select_related("department", "station", "department__building").filter(
+            department_id__in=allowed_department_ids,
+            station__isnull=False,
+        )
+        if selected_department:
+            state_machine_cards_queryset = state_machine_cards_queryset.filter(department=selected_department)
+        if selected_station:
+            state_machine_cards_queryset = state_machine_cards_queryset.filter(station=selected_station)
+        state_machine_cards = list(state_machine_cards_queryset.order_by("department__name", "station__name", "name"))
+    else:
+        state_machine_cards = []
+
+    selected_department_filter_id = str(selected_department.id) if selected_department else ""
+    selected_station_filter_id = str(selected_station.id) if selected_station else ""
+
     is_scanner_view = bool(scan_flag)
 
     context = {
@@ -2414,6 +2431,9 @@ def work_station_view(request):
         "work_orders": work_orders,
         "station_latest_request": station_latest_request,
         "active_alerts": active_alerts,
+        "state_machine_cards": state_machine_cards,
+        "selected_department_filter_id": selected_department_filter_id,
+        "selected_station_filter_id": selected_station_filter_id,
         "just_completed": just_completed,
         "is_scanner_view": is_scanner_view,
         "station_default_machine_name": station_default_machine_name,
@@ -2469,9 +2489,11 @@ def work_station_live_status(request):
         try:
             requested_department_id = int(department_id)
         except ValueError:
-            return JsonResponse({"ok": False, "message": "Invalid department filter."}, status=400)
+            requested_department_id = None
         if requested_department_id not in allowed_department_ids:
-            return JsonResponse({"ok": False, "message": "Not allowed for this department."}, status=403)
+            department_id = ""
+        else:
+            department_id = str(requested_department_id)
 
     work_orders = WorkOrderRequest.objects.select_related("department", "station", "machine").filter(
         department_id__in=allowed_department_ids
@@ -2501,6 +2523,143 @@ def work_station_live_status(request):
             "work_orders": [_serialize_work_order(item) for item in work_orders],
         }
     )
+
+
+@require_any_login
+def work_station_set_machine_state(request):
+    if request.method != "POST":
+        return redirect("work_station")
+
+    allowed_department_ids = _get_allowed_department_ids(request)
+    if not allowed_department_ids:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "No department access assigned."}, status=403)
+        messages.error(request, "No department access assigned. Ask your manager for access.")
+        return redirect("work_station")
+
+    machine_id = request.POST.get("machine_id", "").strip()
+    requested_state = request.POST.get("requested_state", "").strip().lower()
+    selected_department_id = request.POST.get("selected_department_id", "").strip()
+    selected_station_id = request.POST.get("selected_station_id", "").strip()
+
+    state_map = {
+        "off": "Idle",
+        "down": "Maintenance",
+        "on": "Running",
+    }
+
+    state_labels = {
+        "Idle": "Off",
+        "Maintenance": "Being Worked On",
+        "Running": "Running",
+    }
+
+    if requested_state not in state_map:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Invalid machine state selected."}, status=400)
+        messages.error(request, "Invalid machine state selected.")
+    else:
+        machine = Machine.objects.select_related("department").filter(id=machine_id).first()
+        if not machine:
+            if _is_ajax_request(request):
+                return JsonResponse({"ok": False, "message": "Machine not found."}, status=404)
+            messages.error(request, "Machine not found.")
+        elif machine.department_id not in allowed_department_ids:
+            if _is_ajax_request(request):
+                return JsonResponse({"ok": False, "message": "You are not allowed to update this machine."}, status=403)
+            messages.error(request, "You are not allowed to update this machine.")
+        else:
+            machine.status = state_map[requested_state]
+            machine.last_updated = timezone.now()
+            machine.save(update_fields=["status", "last_updated"])
+            requested_state_labels = {
+                "off": "Off",
+                "down": "Down / Under Repair",
+                "on": "On / Running",
+            }
+            messages.success(request, f"{machine.name} state set to {requested_state_labels[requested_state]}.")
+            if _is_ajax_request(request):
+                return JsonResponse(
+                    {
+                        "ok": True,
+                        "message": f"{machine.name} state updated.",
+                        "machine_id": machine.id,
+                        "status": machine.status,
+                        "status_label": state_labels.get(machine.status, machine.status),
+                    }
+                )
+
+    redirect_url = reverse("work_station")
+    query_parts = []
+    if selected_department_id:
+        query_parts.append(f"department_id={selected_department_id}")
+    if selected_station_id:
+        query_parts.append(f"station_id={selected_station_id}")
+    if query_parts:
+        redirect_url = f"{redirect_url}?{'&'.join(query_parts)}"
+    return redirect(redirect_url)
+
+
+@require_any_login
+def work_station_bulk_on(request):
+    if request.method != "POST":
+        return redirect("work_station")
+
+    allowed_department_ids = _get_allowed_department_ids(request)
+    if not allowed_department_ids:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "No department access assigned."}, status=403)
+        messages.error(request, "No department access assigned. Ask your manager for access.")
+        return redirect("work_station")
+
+    selected_department_id = request.POST.get("selected_department_id", "").strip()
+    selected_station_id = request.POST.get("selected_station_id", "").strip()
+    requested_state = request.POST.get("requested_state", "on").strip().lower()
+    machine_ids = [item for item in request.POST.getlist("machine_ids") if str(item).strip()]
+
+    bulk_state_map = {
+        "on": "Running",
+        "off": "Idle",
+    }
+    target_status = bulk_state_map.get(requested_state)
+    if not target_status:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Invalid bulk state selected."}, status=400)
+        messages.error(request, "Invalid bulk state selected.")
+        return redirect("work_station")
+
+    if not machine_ids:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "No station machines found."}, status=400)
+        messages.info(request, "No station machines found to turn on.")
+    else:
+        target_queryset = Machine.objects.filter(
+            id__in=machine_ids,
+            department_id__in=allowed_department_ids,
+        )
+        updated_ids = list(target_queryset.values_list("id", flat=True))
+        updated_count = target_queryset.update(status=target_status, last_updated=timezone.now())
+        status_text = "ON/RUNNING" if target_status == "Running" else "OFF"
+        messages.success(request, f"Turned {status_text} for {updated_count} station machine(s).")
+        if _is_ajax_request(request):
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "message": f"Updated {updated_count} station machine(s).",
+                    "status": target_status,
+                    "updated_machine_ids": updated_ids,
+                }
+            )
+
+    redirect_url = reverse("work_station")
+    query_parts = []
+    if selected_department_id:
+        query_parts.append(f"department_id={selected_department_id}")
+    if selected_station_id:
+        query_parts.append(f"station_id={selected_station_id}")
+    if query_parts:
+        redirect_url = f"{redirect_url}?{'&'.join(query_parts)}"
+    return redirect(redirect_url)
 
 
 @require_any_login
@@ -2772,11 +2931,18 @@ def work_station_complete_request(request):
     work_order_id = request.POST.get("work_order_id", "").strip()
     department_id = request.POST.get("department_id", "").strip()
     inventory_used_answer = request.POST.get("inventory_used_answer", "").strip().lower()
+    machine_running_after_repair = request.POST.get("machine_running_after_repair", "").strip().lower()
 
     if inventory_used_answer not in {"yes", "no"}:
         if _is_ajax_request(request):
             return JsonResponse({"ok": False, "message": "Please answer inventory usage before completion."}, status=400)
         messages.error(request, "Please answer inventory usage before completion.")
+        return redirect("work_station")
+
+    if machine_running_after_repair not in {"yes", "no"}:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Please confirm if the machine is running after repair."}, status=400)
+        messages.error(request, "Please confirm if the machine is running after repair.")
         return redirect("work_station")
 
     work_order = WorkOrderRequest.objects.select_related("department").filter(id=work_order_id).first()
@@ -2801,11 +2967,21 @@ def work_station_complete_request(request):
 
     actor = _get_actor_identity(request)
     now = timezone.now()
+    target_machine = work_order.machine or _resolve_station_machine(work_order.station)
+    is_running_after_repair = machine_running_after_repair == "yes"
+    new_machine_status = "Running" if is_running_after_repair else "Maintenance"
+
+    if target_machine:
+        target_machine.status = new_machine_status
+        target_machine.last_updated = now
+        target_machine.save(update_fields=["status", "last_updated"])
+
     work_order.status = WorkOrderRequest.STATUS_COMPLETED
     work_order.completed_at = now
     work_order.completed_by_first_name = actor["first_name"]
     work_order.completed_by_last_name = actor["last_name"]
     work_order.completed_by_email = actor["email"]
+    work_order.machine_running_after_repair = is_running_after_repair
     work_order.save(
         update_fields=[
             "status",
@@ -2813,11 +2989,20 @@ def work_station_complete_request(request):
             "completed_by_first_name",
             "completed_by_last_name",
             "completed_by_email",
+            "machine_running_after_repair",
         ]
     )
 
     if _is_ajax_request(request):
-        return JsonResponse({"ok": True, "message": "Work marked completed."})
+        return JsonResponse(
+            {
+                "ok": True,
+                "message": "Work marked completed.",
+                "machine_id": target_machine.id if target_machine else "",
+                "machine_status": new_machine_status,
+                "machine_status_label": "Running" if is_running_after_repair else "Being Worked On",
+            }
+        )
 
     if department_id:
         return redirect(f"{reverse('work_station')}?department_id={department_id}")
@@ -2916,7 +3101,7 @@ def work_station_scan_call(request):
     priority = WorkOrderRequest.PRIORITY_HIGH if is_blocking_issue else WorkOrderRequest.PRIORITY_LOW
     downtime_started_at = timezone.now() if is_blocking_issue else None
 
-    WorkOrderRequest.objects.create(
+    work_order = WorkOrderRequest.objects.create(
         station=station,
         department=station.department,
         machine=linked_machine,
@@ -2925,6 +3110,43 @@ def work_station_scan_call(request):
         status=WorkOrderRequest.STATUS_NEW,
         downtime_started_at=downtime_started_at,
     )
+
+    # Send notification to ALL reminder emails for this department
+    from .models import InventoryReminder
+    from django.core.mail import send_mail
+    from django.conf import settings
+    from django.template.loader import render_to_string
+    from django.utils.html import strip_tags
+    from django.urls import reverse
+    reminder_emails = list(InventoryReminder.objects.filter(
+        department=station.department,
+        is_active=True
+    ).values_list('notify_email', flat=True))
+    if reminder_emails:
+        accept_url = settings.APP_BASE_URL + reverse('work_order_accept', kwargs={'work_order_id': work_order.id})
+        subject = f"Work Order Call for Station: {station.name}"
+        context = {
+            "station_name": station.name,
+            "department_name": station.department.name,
+            "message": work_order.message,
+            "priority": work_order.get_priority_display(),
+            "scanned_at": work_order.scanned_at.strftime('%Y-%m-%d %I:%M %p'),
+            "accept_url": accept_url,
+        }
+        html_body = render_to_string("emails/work_order_notification.html", context)
+        text_body = strip_tags(html_body)
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@abb-inventory.local")
+        try:
+            send_mail(
+                subject,
+                text_body,
+                from_email,
+                reminder_emails,
+                html_message=html_body,
+                fail_silently=False,
+            )
+        except Exception:
+            pass
 
     if _is_ajax_request(request):
         return JsonResponse({"ok": True, "message": "Call sent."})
@@ -3082,11 +3304,18 @@ def work_station_scan_complete(request):
         return redirect("work_station")
 
     station_id = request.POST.get("station_id", "").strip()
+    machine_running_after_repair = request.POST.get("machine_running_after_repair", "").strip().lower()
     if not station_id:
         if _is_ajax_request(request):
             return JsonResponse({"ok": False, "message": "Station is required."}, status=400)
         messages.error(request, "Station is required.")
         return redirect("work_station")
+
+    if machine_running_after_repair not in {"yes", "no"}:
+        if _is_ajax_request(request):
+            return JsonResponse({"ok": False, "message": "Please confirm if the machine is running after repair."}, status=400)
+        messages.error(request, "Please confirm if the machine is running after repair.")
+        return redirect(f"{reverse('work_station')}?station_id={station_id}&scan=1")
 
     work_order = (
         WorkOrderRequest.objects.filter(
@@ -3104,11 +3333,21 @@ def work_station_scan_complete(request):
 
     actor = _get_actor_identity(request)
     now = timezone.now()
+    target_machine = work_order.machine or _resolve_station_machine(work_order.station)
+    is_running_after_repair = machine_running_after_repair == "yes"
+    new_machine_status = "Running" if is_running_after_repair else "Maintenance"
+
+    if target_machine:
+        target_machine.status = new_machine_status
+        target_machine.last_updated = now
+        target_machine.save(update_fields=["status", "last_updated"])
+
     work_order.status = WorkOrderRequest.STATUS_COMPLETED
     work_order.completed_at = now
     work_order.completed_by_first_name = actor["first_name"] or "Operator"
     work_order.completed_by_last_name = actor["last_name"] or "Scanner"
     work_order.completed_by_email = actor["email"]
+    work_order.machine_running_after_repair = is_running_after_repair
     work_order.save(
         update_fields=[
             "status",
@@ -3116,6 +3355,7 @@ def work_station_scan_complete(request):
             "completed_by_first_name",
             "completed_by_last_name",
             "completed_by_email",
+            "machine_running_after_repair",
         ]
     )
 
@@ -3562,23 +3802,60 @@ def verify_authorized_user_email(request, token):
 
 
 
-# this section is for ploting the  graph for the machine perfokrmance and the part consumption over time
-# this function will collect the  data from the data base and store it a dictionary format to be used for plotting the graph in the front end
-
-import matplotlib.pyplot as plt
-def get_machine_Time_frame_from_maintenance_records(machine):
-    machine_time_data = WorkOrderRequest.objects.filter(machine=machine).values(
-        "scanned_at", "accessed_at", "responded_at", "accepted_at", "cancelled_at", "completed_at", "time_to_fix")
+# this function is  to remind enginer of a workother call 
+def work_order_notification(station_id):
+    """
+    Sends an email notification to the authorized user in charge of the station
+    when a work order call is made.
+    """
+    from django.core.mail import send_mail
+    from django.conf import settings
+    from django.template.loader import render_to_string
+    from django.utils.html import strip_tags
+    from .models import Station, DepartmentAuthorizedUser, WorkOrderRequest
     
-    time_frame_data = []
-    for record in machine_time_data:
-        time_frame_data.append({
-            "scanned_at": record["scanned_at"],
-            "accessed_at": record["accessed_at"],
-            "responded_at": record["responded_at"],
-            "accepted_at": record["accepted_at"],
-            "cancelled_at": record["cancelled_at"],
-            "completed_at": record["completed_at"],
-            "time_to_fix": record["time_to_fix"],
-        })
-    return time_frame_data
+    # Get the station
+    station = Station.objects.select_related("department").filter(id=station_id).first()
+    if not station:
+        return False
+    
+    # Get the latest active work order for this station
+    work_order = WorkOrderRequest.objects.filter(
+        station=station,
+        status__in=[WorkOrderRequest.STATUS_NEW, WorkOrderRequest.STATUS_COMING]
+    ).order_by("-scanned_at").first()
+    if not work_order:
+        return False
+    
+    # Find the authorized user (in-charge) for this station's department
+    authorized_user = DepartmentAuthorizedUser.objects.filter(
+        department=station.department,
+        is_active=True,
+        email_verified=True
+    ).order_by("granted_at").first()
+    if not authorized_user:
+        return False
+    
+    # Prepare email
+    subject = f"Work Order Call for Station: {station.name}"
+    context = {
+        "station_name": station.name,
+        "department_name": station.department.name,
+        "message": work_order.message,
+        "priority": work_order.get_priority_display(),
+        "scanned_at": work_order.scanned_at,
+    }
+    html_body = render_to_string("emails/inventory_reminder_alert.html", context)
+    text_body = strip_tags(html_body)
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@abb-inventory.local")
+    to_email = [authorized_user.email]
+    
+    send_mail(
+        subject,
+        text_body,
+        from_email,
+        to_email,
+        html_message=html_body,
+        fail_silently=False,
+    )
+    return True

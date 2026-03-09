@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Work Order Notification</title>
+</head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 0;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border:1px solid #cbd5e1;border-radius:10px;overflow:hidden;">
+                    <tr>
+                        <td style="background:#1e293b;padding:18px 22px;color:#ffffff;">
+                            <h2 style="margin:0;font-size:20px;line-height:1.3;">Work Order Call Notification</h2>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:20px 22px;">
+                            <p style="margin:0 0 12px;font-size:14px;line-height:1.6;">
+                                <strong>Station:</strong> {{ station_name }}<br>
+                                <strong>Department:</strong> {{ department_name }}<br>
+                                <strong>Priority:</strong> {{ priority }}<br>
+                                <strong>Time:</strong> {{ scanned_at }}
+                            </p>
+                            <p style="margin:0 0 18px;font-size:15px;line-height:1.7;background:#f8fafc;padding:12px 16px;border-radius:6px;border:1px solid #e2e8f0;">
+                                <strong>Message from Machine:</strong><br>
+                                {{ message }}
+                            </p>
+                            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:18px 0 18px;">
+                                <tr>
+                                    <td style="border-radius:6px;background:#22c55e;">
+                                        <a href="{{ accept_url }}" style="display:inline-block;padding:12px 22px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;">Accept &amp; I Am Coming</a>
+                                    </td>
+                                </tr>
+                            </table>
+                            <p style="margin:0 0 8px;font-size:12px;color:#475569;">
+                                If you are responding to this call, please click the button above to notify the team.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

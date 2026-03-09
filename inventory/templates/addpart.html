@@ -4,6 +4,7 @@
 
 {% block extra_css %}
 <style>
+
 	body {
 		background-color: #1E293B;
 	}
@@ -102,30 +103,29 @@
 		resize: vertical;
 	}
 
-	.btn {
-		border: none;
-		border-radius: 6px;
-		padding: 10px 14px;
-		font-weight: 600;
-		cursor: pointer;
-	}
+	/* ============================= */
+	/* UNIVERSAL BUTTON STYLE       */
+	/* ============================= */
 
-	.btn-primary {
-		background: #3498db;
-		color: #fff;
-	}
-
+	button,
+	.btn,
+	.btn-primary,
 	.btn-warning {
-		background: #dc3545;
-		color: #fff;
+		background: #334155;
+		color: #ffffff;
+		border: none;
+		border-radius: 5px;
+		padding: 6px 14px;
+		font-size: 14px;
+		cursor: pointer;
+		transition: background 0.2s ease;
 	}
 
-	.btn-primary:hover {
-		background: #2563eb;
-	}
-
+	button:hover,
+	.btn:hover,
+	.btn-primary:hover,
 	.btn-warning:hover {
-		background: #c82333;
+		background: #475569;
 	}
 
 	.hidden {
@@ -184,6 +184,7 @@
 	}
 
 	@media (max-width: 980px) {
+
 		.two-col {
 			grid-template-columns: 1fr;
 		}
@@ -191,14 +192,16 @@
 		.snapshot-filters {
 			grid-template-columns: 1fr;
 		}
+
 	}
+
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="manage-wrap">
 	
-	{% if messages %}
+	{% if False and messages %}
 	<ul class="msg-list">
 		{% for message in messages %}
 			<li class="{{ message.tags|default:'info' }}">{{ message }}</li>
@@ -352,55 +355,60 @@
 	</div>
 
 	<section class="table-panel">
-		<h3>Current Inventory</h3>
-		<div class="snapshot-filters">
-			<div class="field">
-				<label for="snapshot_department_filter">Department</label>
-				<select id="snapshot_department_filter">
-					<option value="">All departments</option>
-					{% for department in departments %}
-						<option value="{{ department.id }}">{{ department.name }} ({{ department.building.name }})</option>
-					{% endfor %}
-				</select>
-			</div>
-			<div class="field">
-				<label for="snapshot_machine_filter">Snapshot Machine Filter</label>
-				<select id="snapshot_machine_filter">
-					<option value="">All machines</option>
-					{% for machine in machines %}
-						<option value="{{ machine.id }}" data-department="{{ machine.department_id }}">{{ machine.name }} ({{ machine.department.name }})</option>
-					{% endfor %}
-				</select>
-			</div>
+		<div style="display: flex; align-items: center; justify-content: space-between;">
+			<h3 style="margin: 0;" id="inventoryTableTitle">Current Inventory</h3>
+			<button id="inventoryTableToggleBtn" type="button" style="background: #334155; color: #fff; border: none; border-radius: 5px; padding: 6px 14px; font-size: 14px; cursor: pointer;">Collapse</button>
 		</div>
-		<table class="inv-table">
-			<thead>
-				<tr>
-					<th>Machine</th>
-					<th>Department</th>
-					<th>Part</th>
-					<th>Model</th>
-					<th>Quantity Left</th>
-					<th>Placement</th>
-				</tr>
-			</thead>
-			<tbody>
-				{% for link in machine_parts %}
-				<tr data-department="{{ link.machine.department_id }}" data-machine="{{ link.machine_id }}">
-					<td>{{ link.machine.name }}</td>
-					<td>{{ link.machine.department.name }}</td>
-					<td>{{ link.part.name }}</td>
-					<td>{{ link.part.model_number }}</td>
-					<td>{{ link.quantity_left }}</td>
-					<td>{{ link.placement_location|default:'-' }}</td>
-				</tr>
-				{% empty %}
-				<tr>
-					<td colspan="6">No inventory links found.</td>
-				</tr>
-				{% endfor %}
-			</tbody>
-		</table>
+		<div id="inventoryTableWrapper">
+			<div class="snapshot-filters">
+				<div class="field">
+					<label for="snapshot_department_filter">Department</label>
+					<select id="snapshot_department_filter">
+						<option value="">All departments</option>
+						{% for department in departments %}
+							<option value="{{ department.id }}">{{ department.name }} ({{ department.building.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="field">
+					<label for="snapshot_machine_filter">Snapshot Machine Filter</label>
+					<select id="snapshot_machine_filter">
+						<option value="">All machines</option>
+						{% for machine in machines %}
+							<option value="{{ machine.id }}" data-department="{{ machine.department_id }}">{{ machine.name }} ({{ machine.department.name }})</option>
+						{% endfor %}
+					</select>
+				</div>
+			</div>
+			<table class="inv-table">
+				<thead>
+					<tr>
+						<th>Machine</th>
+						<th>Department</th>
+						<th>Part</th>
+						<th>Model</th>
+						<th>Quantity Left</th>
+						<th>Placement</th>
+					</tr>
+				</thead>
+				<tbody>
+					{% for link in machine_parts %}
+					<tr data-department="{{ link.machine.department_id }}" data-machine="{{ link.machine_id }}">
+						<td>{{ link.machine.name }}</td>
+						<td>{{ link.machine.department.name }}</td>
+						<td>{{ link.part.name }}</td>
+						<td>{{ link.part.model_number }}</td>
+						<td>{{ link.quantity_left }}</td>
+						<td>{{ link.placement_location|default:'-' }}</td>
+					</tr>
+					{% empty %}
+					<tr>
+						<td colspan="6">No inventory links found.</td>
+					</tr>
+					{% endfor %}
+				</tbody>
+			</table>
+		</div>
 	</section>
 </div>
 {% endblock %}
@@ -557,5 +565,20 @@
 			radio.addEventListener("change", togglePartMode);
 		});
 	});
+
+	// Collapsible inventory table with button
+	(function() {
+		const btn = document.getElementById('inventoryTableToggleBtn');
+		const wrapper = document.getElementById('inventoryTableWrapper');
+		const title = document.getElementById('inventoryTableTitle');
+		if (!btn || !wrapper) return;
+		let collapsed = false;
+		btn.addEventListener('click', function() {
+			collapsed = !collapsed;
+			wrapper.style.display = collapsed ? 'none' : '';
+			btn.textContent = collapsed ? 'Expand' : 'Collapse';
+			title.textContent = collapsed ? 'Current Inventory (collapsed)' : 'Current Inventory';
+		});
+	})();
 </script>
 {% endblock %}
